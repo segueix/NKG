@@ -1,7 +1,7 @@
 # AGENTS.md — NKG repository instructions
 
 ## Mission
-Build and maintain NKG as a single-file narrative project generator that supports fiction project foundation work up to a stable pre-NKG checkpoint.
+Build and maintain NKG as a single-file narrative project generator that supports fiction project foundation work up to a stable pre-NKG checkpoint, then controlled Phase 2 expansion.
 
 ## Product roadmap (fixed)
 - Phase 1: pre-NKG functional foundation.
@@ -9,14 +9,15 @@ Build and maintain NKG as a single-file narrative project generator that support
 - Phase 3: Narrative Bible + export.
 
 ## Scope (current)
-- Implement and stabilize **Phase 1 only**:
+- Phase 1 is closed and must remain stable:
   - `idea`
   - `premise`
   - `structure`
   - `characters`
   - `world`
   - `chapterOutline`
-- Ensure clear state handling and diagnostics for Phase 1 checkpoints.
+- Repository is ready to start the **first real Phase 2 slice** (`nkgStyleTheme`) for NKG generation.
+- Preserve clear state handling and diagnostics while beginning Phase 2 in bounded slices.
 
 ## Hard constraints
 - Keep the app as a single `index.html` file.
@@ -30,13 +31,12 @@ Build and maintain NKG as a single-file narrative project generator that support
 - Never allow silent failures.
 
 ## Out of scope until later phases
-- NKG generation (real implementation)
+- Full/unbounded NKG generation beyond the current planned slice.
 - Bible generation (real implementation)
 - Export implementation
 - Manuscript/chapter prose writing features
 
 ## Forbidden regressions
-- Expanding scope beyond Phase 1 foundations.
 - Introducing manuscript writing functionality.
 - Breaking the defined AppState top-level shape:
   - `meta`, `stages`, `project`, `outputs`, `diagnostics`

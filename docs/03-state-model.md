@@ -1,4 +1,4 @@
-# 03 — State Model (Phase 2 first official NKG slice)
+# 03 — State Model (target contract for first Phase 2 slice)
 
 ## AppState top-level shape
 ```json
@@ -14,7 +14,7 @@
 ## `meta`
 Operational metadata:
 - `appName`
-- `phase` (`phase2` for this slice)
+- `phase`
 - `version`
 - `createdAt`
 - `updatedAt`
@@ -22,14 +22,14 @@ Operational metadata:
 - `lastSuccessfulStage`
 
 ## `stages`
-Includes Phase 1 stages plus one formal Phase 2 stage:
+Baseline includes Phase 1 stages and may add a formal Phase 2 stage (`nkgStyleTheme`) for the first real slice:
 - `idea`
 - `premise`
 - `structure`
 - `characters`
 - `world`
 - `chapterOutline`
-- `nkgStyleTheme`
+- `nkgStyleTheme` (first-slice target stage)
 
 Each stage uses the same structure:
 - `status` (`idle | running | ok | error`)
@@ -40,8 +40,8 @@ Each stage uses the same structure:
 - `errorMessage`
 - `retries`
 
-## `project.themePipeline`
-First-slice pipeline input/work area:
+## `project.themePipeline` (first-slice target shape)
+Planned pipeline input/work area:
 - `config.temperatures`
   - `styleAnalysis` = `0.2`
   - `themeIdeation` = `0.9`
@@ -62,8 +62,8 @@ First-slice pipeline input/work area:
   - `selectedThemeTitle`
   - `selectedThemeRationale`
 
-## `outputs.nkg` (official write target)
-On successful pass 3, the first official non-empty NKG block is written to `AppState.outputs.nkg` with this structure:
+## `outputs.nkg` (first official write target)
+For the first real Phase 2 slice, successful pass 3 should write this richer structure to `AppState.outputs.nkg`:
 
 ```json
 {
@@ -105,15 +105,8 @@ On successful pass 3, the first official non-empty NKG block is written to `AppS
 ```
 
 ## `diagnostics`
-Contains checkpoint, trace, and pass-level visibility:
+Recommended visibility for the first Phase 2 slice:
 - `checkpoints` (`cp_01..cp_05` + `cp_11..cp_15`)
 - `trace`
 - `lastError`
-- `nkgStyleTheme`
-  - `currentPhase`
-  - `currentStage`
-  - `lastSuccessfulStage`
-  - `pass1`, `pass2`, `pass3` status snapshots
-  - `requestIds`
-  - `warnings`
-  - `lastError`
+- optional stage-specific diagnostics for `nkgStyleTheme`

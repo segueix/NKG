@@ -1,14 +1,15 @@
 # 02 — Checkpoints
 
 ## Phase 1 checkpoints (legacy visibility)
-These remain visible for regression tracking from the original shell:
+These remain visible for regression tracking from the closed foundation shell:
 - `cp_01_scope_clean`
 - `cp_02_ui_phase1_only`
 - `cp_03_appstate_ready`
 - `cp_04_stage_runner_ready`
 - `cp_05_phase1_shell_stable`
 
-## Phase 2 first-slice checkpoints (active)
+## Phase 2 first-slice checkpoints (planned sequence)
+Use this sequence for the first real `nkgStyleTheme` slice:
 
 ### cp_11_nkg_input_ready
 True only when all required first-slice inputs are non-empty:
