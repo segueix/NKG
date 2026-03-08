@@ -26,7 +26,8 @@ This repository includes a stable Phase 1 foundation plus the **first official P
 
 ## Repository structure
 - `index.html` — single-file app shell.
-- `docs/` — scope, roadmap, checkpoints, and state model docs.
+- `docs/` — scope, roadmap, checkpoints, state model, and review-system docs.
+- `docs/review/` — reusable judging rubric and phase/slice review template.
 - `schemas/` — JSON schemas for phase-1 app state and checkpoint payloads.
 - `fixtures/` — sample phase-1 project seed.
 - `tests/` — manual smoke checklist for phase-1 shell verification.
