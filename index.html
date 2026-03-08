@@ -14,6 +14,8 @@
     .panel { border: 1px solid #334155; border-radius: 8px; padding: .8rem; background: #111827; }
     .stage { border: 1px solid #334155; border-radius: 8px; padding: .75rem; margin-bottom: .75rem; }
     .stage textarea { width: 100%; min-height: 72px; margin-top: .5rem; }
+    .field { margin: .4rem 0; }
+    .field input, .field textarea, .field select { width: 100%; margin-top: .25rem; }
     .actions { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: .5rem; }
     button { cursor: pointer; border: 1px solid #475569; background: #1e293b; color: #e2e8f0; border-radius: 6px; padding: .35rem .55rem; }
     pre { white-space: pre-wrap; word-break: break-word; margin: 0; max-height: 300px; overflow: auto; }
@@ -54,6 +56,12 @@
     </div>
 
     <section class="panel" style="margin-top: 1rem;">
+      <h2>3-Pass Theme Pipeline (diagnosable)</h2>
+      <p class="muted">Pass 1: style analysis → Pass 2: theme ideation → Pass 3: theme selection and normalization.</p>
+      <div id="themePipelineRoot"></div>
+    </section>
+
+    <section class="panel" style="margin-top: 1rem;">
       <h2>AppState Snapshot</h2>
       <pre id="stateRoot"></pre>
     </section>
@@ -89,6 +97,14 @@
         retries: 0
       });
 
+      const createPassState = () => ({
+        status: 'idle',
+        lastRunAt: null,
+        errorCode: null,
+        errorMessage: null,
+        requestId: null
+      });
+
       const initialState = {
         meta: {
           appName: 'NKG',
@@ -100,7 +116,30 @@
           lastSuccessfulStage: null
         },
         stages: Object.fromEntries(STAGE_IDS.map(id => [id, createInitialStageState()])),
-        project: Object.fromEntries(STAGE_IDS.map(id => [id, ''])),
+        project: {
+          ...Object.fromEntries(STAGE_IDS.map(id => [id, ''])),
+          themePipeline: {
+            authorReference: '',
+            sampleParagraphs: ['', '', ''],
+            desiredSetting: '',
+            selectedThemeIndex: 0,
+            pass1: {
+              state: createPassState(),
+              styleProfile: '',
+              targetNovelMode: ''
+            },
+            pass2: {
+              state: createPassState(),
+              candidateThemes: []
+            },
+            pass3: {
+              state: createPassState(),
+              selectedThemeTitle: '',
+              selectedThemeRationale: '',
+              finalNkgWrite: ''
+            }
+          }
+        },
         outputs: {
           nkg: null,
           bible: null
@@ -151,6 +190,163 @@
         state.project[stageId] = String(text ?? '');
         setMetaUpdatedAt();
         writeTrace('project.update', `${stageId} text updated`, { stageId });
+      };
+
+      const validatePipelineInputsForPass1 = () => {
+        const { authorReference, sampleParagraphs, desiredSetting } = state.project.themePipeline;
+        if (!authorReference.trim()) throw new Error('Pass 1 requires an author reference.');
+        if (!desiredSetting.trim()) throw new Error('Pass 1 requires a desired setting.');
+        const nonEmptyParagraphs = sampleParagraphs.filter(p => String(p).trim().length > 0);
+        if (nonEmptyParagraphs.length < 3) throw new Error('Pass 1 requires 3 non-empty sample paragraphs.');
+      };
+
+      const computeStyleProfile = () => {
+        const { authorReference, sampleParagraphs, desiredSetting } = state.project.themePipeline;
+        const joinedSamples = sampleParagraphs.join(' ');
+        const sentenceCount = joinedSamples.split(/[.!?]+/).map(v => v.trim()).filter(Boolean).length;
+        const averageSentenceLength = sentenceCount > 0 ? Math.round(joinedSamples.split(/\s+/).filter(Boolean).length / sentenceCount) : 0;
+        const tone = averageSentenceLength > 16 ? 'deliberate' : 'punchy';
+        return `Reference:${authorReference.trim()} | tone:${tone} | avgSentenceLength:${averageSentenceLength} | settingFocus:${desiredSetting.trim()}`;
+      };
+
+      const computeTargetNovelMode = () => {
+        const normalized = state.project.themePipeline.desiredSetting.toLowerCase();
+        if (normalized.includes('space') || normalized.includes('future') || normalized.includes('planet')) return 'speculative';
+        if (normalized.includes('kingdom') || normalized.includes('magic') || normalized.includes('myth')) return 'epic';
+        if (normalized.includes('city') || normalized.includes('street') || normalized.includes('detective')) return 'gritty';
+        return 'character-driven';
+      };
+
+      const computeCandidateThemes = () => {
+        const pipeline = state.project.themePipeline;
+        const mode = pipeline.pass1.targetNovelMode;
+        const setting = pipeline.desiredSetting.trim();
+        return [
+          { title: 'Belonging versus Reinvention', rationale: `In a ${mode} frame, identity pressure is heightened by ${setting}.` },
+          { title: 'Power and Moral Cost', rationale: `The setting of ${setting} creates trade-offs where every gain extracts an ethical price.` },
+          { title: 'Memory as Survival', rationale: `A ${mode} narrative can anchor conflict in what must be remembered to endure ${setting}.` },
+          { title: 'Intimacy under Systemic Strain', rationale: `Relationships are tested by institutions and customs embedded in ${setting}.` },
+          { title: 'Hope as Defiance', rationale: `Characters in ${setting} can weaponize hope against fatalistic pressure.` }
+        ];
+      };
+
+      const createFinalNkgWrite = (theme) => {
+        const pipeline = state.project.themePipeline;
+        return [
+          'NKG THEME BRIEF (Phase 1 Placeholder — not full NKG generation)',
+          `Setting: ${pipeline.desiredSetting.trim()}`,
+          `Target novel mode: ${pipeline.pass1.targetNovelMode}`,
+          `Central theme: ${theme.title}`,
+          `Rationale: ${theme.rationale}`,
+          'Use this as a pre-NKG checkpoint artifact to guide later generation phases.'
+        ].join('\n');
+      };
+
+      const updateThemePipelineInput = ({ field, value, paragraphIndex }) => {
+        const pipeline = state.project.themePipeline;
+        if (field === 'authorReference') pipeline.authorReference = String(value ?? '');
+        else if (field === 'desiredSetting') pipeline.desiredSetting = String(value ?? '');
+        else if (field === 'sampleParagraph') {
+          if (!Number.isInteger(paragraphIndex) || paragraphIndex < 0 || paragraphIndex > 2) {
+            throw new Error('Invalid paragraph index. Expected 0, 1, or 2.');
+          }
+          pipeline.sampleParagraphs[paragraphIndex] = String(value ?? '');
+        } else if (field === 'selectedThemeIndex') {
+          const nextIndex = Number(value);
+          if (!Number.isInteger(nextIndex) || nextIndex < 0) throw new Error('selectedThemeIndex must be a non-negative integer.');
+          pipeline.selectedThemeIndex = nextIndex;
+        } else {
+          throw new Error(`Unknown theme pipeline field: ${field}`);
+        }
+        setMetaUpdatedAt();
+        writeTrace('pipeline.input.update', 'Theme pipeline input updated', { field, paragraphIndex });
+      };
+
+      const runThemePipelinePass = (passId) => {
+        const pipeline = state.project.themePipeline;
+        const now = nowIso();
+        const markError = (passState, errorCode, errorMessage) => {
+          passState.status = 'error';
+          passState.errorCode = errorCode;
+          passState.errorMessage = errorMessage;
+          passState.lastRunAt = now;
+          passState.requestId = mkRequestId(`theme_${passId}`);
+          state.diagnostics.lastError = { at: now, stageId: `themePipeline.${passId}`, errorCode, errorMessage };
+        };
+
+        if (passId === 'pass1') {
+          const passState = pipeline.pass1.state;
+          try {
+            validatePipelineInputsForPass1();
+            passState.status = 'running';
+            passState.requestId = mkRequestId('theme_pass1');
+            pipeline.pass1.styleProfile = computeStyleProfile();
+            pipeline.pass1.targetNovelMode = computeTargetNovelMode();
+            passState.status = 'ok';
+            passState.errorCode = null;
+            passState.errorMessage = null;
+            passState.lastRunAt = now;
+            writeTrace('pipeline.pass1.ok', 'Pass 1 style analysis complete', {
+              styleProfile: pipeline.pass1.styleProfile,
+              targetNovelMode: pipeline.pass1.targetNovelMode
+            });
+          } catch (err) {
+            markError(passState, 'THEME_PASS1_ERROR', err instanceof Error ? err.message : String(err));
+            writeTrace('pipeline.pass1.error', 'Pass 1 style analysis failed', { error: passState.errorMessage });
+            throw err;
+          }
+        } else if (passId === 'pass2') {
+          const passState = pipeline.pass2.state;
+          try {
+            if (pipeline.pass1.state.status !== 'ok') {
+              throw new Error('Pass 2 requires Pass 1 to complete successfully.');
+            }
+            passState.status = 'running';
+            passState.requestId = mkRequestId('theme_pass2');
+            pipeline.pass2.candidateThemes = computeCandidateThemes();
+            passState.status = 'ok';
+            passState.errorCode = null;
+            passState.errorMessage = null;
+            passState.lastRunAt = now;
+            writeTrace('pipeline.pass2.ok', 'Pass 2 theme ideation complete', { candidateCount: pipeline.pass2.candidateThemes.length });
+          } catch (err) {
+            markError(passState, 'THEME_PASS2_ERROR', err instanceof Error ? err.message : String(err));
+            writeTrace('pipeline.pass2.error', 'Pass 2 theme ideation failed', { error: passState.errorMessage });
+            throw err;
+          }
+        } else if (passId === 'pass3') {
+          const passState = pipeline.pass3.state;
+          try {
+            if (pipeline.pass2.state.status !== 'ok') {
+              throw new Error('Pass 3 requires Pass 2 to complete successfully.');
+            }
+            if (pipeline.pass2.candidateThemes.length < 5) {
+              throw new Error('Pass 3 requires at least 5 candidate themes from Pass 2.');
+            }
+            const selectedTheme = pipeline.pass2.candidateThemes[pipeline.selectedThemeIndex];
+            if (!selectedTheme) {
+              throw new Error('Pass 3 selected theme index is out of range.');
+            }
+            passState.status = 'running';
+            passState.requestId = mkRequestId('theme_pass3');
+            pipeline.pass3.selectedThemeTitle = selectedTheme.title;
+            pipeline.pass3.selectedThemeRationale = selectedTheme.rationale;
+            pipeline.pass3.finalNkgWrite = createFinalNkgWrite(selectedTheme);
+            passState.status = 'ok';
+            passState.errorCode = null;
+            passState.errorMessage = null;
+            passState.lastRunAt = now;
+            writeTrace('pipeline.pass3.ok', 'Pass 3 theme selection and normalization complete', { selectedThemeTitle: selectedTheme.title });
+          } catch (err) {
+            markError(passState, 'THEME_PASS3_ERROR', err instanceof Error ? err.message : String(err));
+            writeTrace('pipeline.pass3.error', 'Pass 3 theme selection failed', { error: passState.errorMessage });
+            throw err;
+          }
+        } else {
+          throw new Error(`Unknown pipeline pass: ${passId}`);
+        }
+
+        setMetaUpdatedAt();
       };
 
       const runStage = (stageId) => {
@@ -324,6 +520,12 @@
             case 'STAGE_RESET':
               resetStage(action.stageId);
               break;
+            case 'THEME_PIPELINE_UPDATE_INPUT':
+              updateThemePipelineInput(action);
+              break;
+            case 'THEME_PIPELINE_RUN_PASS':
+              runThemePipelinePass(action.passId);
+              break;
             default:
               throw new Error(`Unknown action type: ${action.type}`);
           }
@@ -363,7 +565,8 @@
         checkpointRoot: document.getElementById('checkpointRoot'),
         checkpointId: document.getElementById('checkpointId'),
         buildCheckpointBtn: document.getElementById('buildCheckpointBtn'),
-        checkpointPayload: document.getElementById('checkpointPayload')
+        checkpointPayload: document.getElementById('checkpointPayload'),
+        themePipelineRoot: document.getElementById('themePipelineRoot')
       };
 
       const escapeHtml = (text) => String(text)
@@ -413,6 +616,45 @@
 
         nodes.traceRoot.textContent = JSON.stringify(state.diagnostics.trace, null, 2);
         nodes.stateRoot.textContent = JSON.stringify(state, null, 2);
+
+        const pipeline = state.project.themePipeline;
+        nodes.themePipelineRoot.innerHTML = `
+          <div class="field">
+            <label for="authorReference">Author reference</label>
+            <input id="authorReference" data-role="theme-input" data-field="authorReference" value="${escapeHtml(pipeline.authorReference)}" placeholder="e.g. Ursula K. Le Guin" />
+          </div>
+          <div class="field">
+            <label for="desiredSetting">Desired setting</label>
+            <input id="desiredSetting" data-role="theme-input" data-field="desiredSetting" value="${escapeHtml(pipeline.desiredSetting)}" placeholder="e.g. storm-battered orbital colony" />
+          </div>
+          ${pipeline.sampleParagraphs.map((value, index) => `
+            <div class="field">
+              <label for="sampleParagraph_${index}">Sample paragraph ${index + 1}</label>
+              <textarea id="sampleParagraph_${index}" data-role="theme-input" data-field="sampleParagraph" data-paragraph-index="${index}" placeholder="Sample paragraph ${index + 1}">${escapeHtml(value)}</textarea>
+            </div>
+          `).join('')}
+
+          <h3>Pass 1 — Style analysis</h3>
+          <button data-role="run-theme-pass" data-pass-id="pass1">Run Pass 1</button>
+          <div class="muted">status: ${pipeline.pass1.state.status} | lastRunAt: ${pipeline.pass1.state.lastRunAt || '-'} | requestId: ${pipeline.pass1.state.requestId || '-'}</div>
+          <pre>${escapeHtml(JSON.stringify({ styleProfile: pipeline.pass1.styleProfile, targetNovelMode: pipeline.pass1.targetNovelMode, error: pipeline.pass1.state.errorMessage }, null, 2))}</pre>
+
+          <h3>Pass 2 — Theme ideation</h3>
+          <button data-role="run-theme-pass" data-pass-id="pass2">Run Pass 2</button>
+          <div class="muted">status: ${pipeline.pass2.state.status} | lastRunAt: ${pipeline.pass2.state.lastRunAt || '-'} | requestId: ${pipeline.pass2.state.requestId || '-'}</div>
+          <pre>${escapeHtml(JSON.stringify({ candidateThemes: pipeline.pass2.candidateThemes, error: pipeline.pass2.state.errorMessage }, null, 2))}</pre>
+
+          <h3>Pass 3 — Theme selection and normalization</h3>
+          <div class="field">
+            <label for="selectedThemeIndex">Selected theme index</label>
+            <select id="selectedThemeIndex" data-role="theme-input" data-field="selectedThemeIndex">
+              ${pipeline.pass2.candidateThemes.map((theme, index) => `<option value="${index}" ${pipeline.selectedThemeIndex === index ? 'selected' : ''}>${index}: ${escapeHtml(theme.title)}</option>`).join('') || '<option value="0">0: (run Pass 2 first)</option>'}
+            </select>
+          </div>
+          <button data-role="run-theme-pass" data-pass-id="pass3">Run Pass 3</button>
+          <div class="muted">status: ${pipeline.pass3.state.status} | lastRunAt: ${pipeline.pass3.state.lastRunAt || '-'} | requestId: ${pipeline.pass3.state.requestId || '-'}</div>
+          <pre>${escapeHtml(JSON.stringify({ selectedThemeTitle: pipeline.pass3.selectedThemeTitle, selectedThemeRationale: pipeline.pass3.selectedThemeRationale, finalNkgWrite: pipeline.pass3.finalNkgWrite, error: pipeline.pass3.state.errorMessage }, null, 2))}</pre>
+        `;
       };
 
       const bindEvents = () => {
@@ -458,6 +700,41 @@
           } catch (err) {
             console.error('Checkpoint payload build failed', err);
             alert(`Checkpoint build failed: ${err instanceof Error ? err.message : String(err)}`);
+          }
+        });
+
+        nodes.themePipelineRoot.addEventListener('input', (event) => {
+          const target = event.target;
+          if (!(target instanceof HTMLElement)) return;
+          if (target.dataset.role !== 'theme-input') return;
+          const field = target.dataset.field;
+          if (!field) return;
+          const value = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement
+            ? target.value
+            : '';
+          const paragraphIndex = target.dataset.paragraphIndex ? Number(target.dataset.paragraphIndex) : undefined;
+          try {
+            AppCore.dispatch({ type: 'THEME_PIPELINE_UPDATE_INPUT', field, value, paragraphIndex });
+            render();
+          } catch (err) {
+            console.error('Theme pipeline input update failed', err);
+            alert(`Theme pipeline input update failed: ${err instanceof Error ? err.message : String(err)}`);
+          }
+        });
+
+        nodes.themePipelineRoot.addEventListener('click', (event) => {
+          const target = event.target;
+          if (!(target instanceof HTMLElement)) return;
+          if (target.dataset.role !== 'run-theme-pass') return;
+          const passId = target.dataset.passId;
+          if (!passId) return;
+          try {
+            AppCore.dispatch({ type: 'THEME_PIPELINE_RUN_PASS', passId });
+            render();
+          } catch (err) {
+            console.error('Theme pipeline pass failed', err);
+            alert(`Theme pipeline pass failed: ${err instanceof Error ? err.message : String(err)}`);
+            render();
           }
         });
       };
