@@ -1,0 +1,394 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NKG — Phase 1 Shell</title>
+  <style>
+    :root { font-family: Arial, sans-serif; color-scheme: light dark; }
+    body { margin: 0; background: #0f172a; color: #e2e8f0; }
+    .wrap { max-width: 1200px; margin: 0 auto; padding: 1rem; }
+    h1, h2, h3 { margin: 0 0 .5rem; }
+    .muted { color: #94a3b8; }
+    .grid { display: grid; grid-template-columns: 2fr 1fr; gap: 1rem; }
+    .panel { border: 1px solid #334155; border-radius: 8px; padding: .8rem; background: #111827; }
+    .stage { border: 1px solid #334155; border-radius: 8px; padding: .75rem; margin-bottom: .75rem; }
+    .stage textarea { width: 100%; min-height: 72px; margin-top: .5rem; }
+    .actions { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: .5rem; }
+    button { cursor: pointer; border: 1px solid #475569; background: #1e293b; color: #e2e8f0; border-radius: 6px; padding: .35rem .55rem; }
+    pre { white-space: pre-wrap; word-break: break-word; margin: 0; max-height: 300px; overflow: auto; }
+    .ok { color: #22c55e; }
+    .bad { color: #f87171; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>NKG — Phase 1 Foundation Shell</h1>
+    <p class="muted">Scope: idea → premise → structure → characters → world → chapterOutline. No manuscript writing, NKG generation, Bible generation, or export.</p>
+
+    <div class="grid">
+      <section class="panel">
+        <h2>Phase 1 Stages</h2>
+        <div id="stagesRoot"></div>
+      </section>
+
+      <aside class="panel">
+        <h2>Diagnostics</h2>
+        <div id="checkpointRoot"></div>
+        <h3 style="margin-top: 1rem;">Checkpoint shell</h3>
+        <label for="checkpointId">Checkpoint ID:</label>
+        <select id="checkpointId">
+          <option>cp_01_scope_clean</option>
+          <option>cp_02_ui_phase1_only</option>
+          <option>cp_03_appstate_ready</option>
+          <option>cp_04_stage_runner_ready</option>
+          <option selected>cp_05_phase1_shell_stable</option>
+        </select>
+        <button id="buildCheckpointBtn">Build checkpoint payload</button>
+        <pre id="checkpointPayload"></pre>
+        <h3 style="margin-top: 1rem;">Trace</h3>
+        <pre id="traceRoot"></pre>
+      </aside>
+    </div>
+
+    <section class="panel" style="margin-top: 1rem;">
+      <h2>AppState Snapshot</h2>
+      <pre id="stateRoot"></pre>
+    </section>
+  </div>
+
+  <script>
+    // ===== Constants / registry =====
+    const STAGE_REGISTRY = [
+      { id: 'idea', label: 'Idea' },
+      { id: 'premise', label: 'Premise' },
+      { id: 'structure', label: 'Structure' },
+      { id: 'characters', label: 'Characters' },
+      { id: 'world', label: 'World' },
+      { id: 'chapterOutline', label: 'Chapter Outline' }
+    ];
+
+    const STAGE_IDS = STAGE_REGISTRY.map(s => s.id);
+    const ALLOWED_STATUSES = ['idle', 'running', 'ok', 'error'];
+
+    // ===== Business/state logic =====
+    const AppCore = (() => {
+      const nowIso = () => new Date().toISOString();
+      const mkRequestId = (stageId) => `req_${stageId}_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
+
+      const createInitialStageState = () => ({
+        status: 'idle',
+        startedAt: null,
+        finishedAt: null,
+        requestId: null,
+        errorCode: null,
+        errorMessage: null,
+        retries: 0
+      });
+
+      const initialState = {
+        meta: {
+          appName: 'NKG',
+          phase: 'phase1',
+          version: '0.1.0',
+          createdAt: nowIso(),
+          updatedAt: nowIso()
+        },
+        stages: Object.fromEntries(STAGE_IDS.map(id => [id, createInitialStageState()])),
+        project: Object.fromEntries(STAGE_IDS.map(id => [id, ''])),
+        outputs: {
+          nkg: null,
+          bible: null
+        },
+        diagnostics: {
+          checkpoints: {
+            cp_01_scope_clean: false,
+            cp_02_ui_phase1_only: false,
+            cp_03_appstate_ready: false,
+            cp_04_stage_runner_ready: false,
+            cp_05_phase1_shell_stable: false
+          },
+          trace: [],
+          lastError: null
+        }
+      };
+
+      const state = structuredClone(initialState);
+
+      const assertStageId = (stageId) => {
+        if (!STAGE_IDS.includes(stageId)) {
+          throw new Error(`Unknown stage: ${stageId}`);
+        }
+      };
+
+      const assertStatus = (status) => {
+        if (!ALLOWED_STATUSES.includes(status)) {
+          throw new Error(`Invalid status: ${status}`);
+        }
+      };
+
+      const writeTrace = (type, message, context = {}) => {
+        state.diagnostics.trace.unshift({ at: nowIso(), type, message, context });
+        state.diagnostics.trace = state.diagnostics.trace.slice(0, 25);
+      };
+
+      const setMetaUpdatedAt = () => {
+        state.meta.updatedAt = nowIso();
+      };
+
+      const updateProjectText = (stageId, text) => {
+        assertStageId(stageId);
+        state.project[stageId] = String(text ?? '');
+        setMetaUpdatedAt();
+        writeTrace('project.update', `${stageId} text updated`, { stageId });
+      };
+
+      const runStage = (stageId) => {
+        assertStageId(stageId);
+        const stage = state.stages[stageId];
+        stage.status = 'running';
+        stage.startedAt = nowIso();
+        stage.finishedAt = null;
+        stage.requestId = mkRequestId(stageId);
+        stage.errorCode = null;
+        stage.errorMessage = null;
+        setMetaUpdatedAt();
+        writeTrace('stage.running', `${stageId} started`, { stageId, requestId: stage.requestId });
+      };
+
+      const completeStage = (stageId) => {
+        assertStageId(stageId);
+        const stage = state.stages[stageId];
+        stage.status = 'ok';
+        stage.finishedAt = nowIso();
+        if (!stage.requestId) stage.requestId = mkRequestId(stageId);
+        stage.errorCode = null;
+        stage.errorMessage = null;
+        setMetaUpdatedAt();
+        writeTrace('stage.ok', `${stageId} completed`, { stageId });
+      };
+
+      const failStage = (stageId, errorCode = 'STAGE_ERROR', errorMessage = 'Unknown stage error') => {
+        assertStageId(stageId);
+        const stage = state.stages[stageId];
+        stage.status = 'error';
+        stage.finishedAt = nowIso();
+        if (!stage.requestId) stage.requestId = mkRequestId(stageId);
+        stage.errorCode = String(errorCode);
+        stage.errorMessage = String(errorMessage);
+        stage.retries += 1;
+        state.diagnostics.lastError = {
+          at: nowIso(),
+          stageId,
+          errorCode: stage.errorCode,
+          errorMessage: stage.errorMessage
+        };
+        setMetaUpdatedAt();
+        writeTrace('stage.error', `${stageId} failed`, { stageId, errorCode: stage.errorCode });
+      };
+
+      const resetStage = (stageId) => {
+        assertStageId(stageId);
+        state.stages[stageId] = createInitialStageState();
+        setMetaUpdatedAt();
+        writeTrace('stage.reset', `${stageId} reset`, { stageId });
+      };
+
+      const evaluateCheckpoints = () => {
+        const cp_01_scope_clean = true;
+        const cp_02_ui_phase1_only = STAGE_IDS.length === 6 && STAGE_IDS.join(',') === 'idea,premise,structure,characters,world,chapterOutline';
+
+        const hasTopKeys = ['meta', 'stages', 'project', 'outputs', 'diagnostics'].every(k => Object.prototype.hasOwnProperty.call(state, k));
+        const onlyTopKeys = Object.keys(state).length === 5;
+        const stageShapeOk = STAGE_IDS.every(stageId => {
+          const s = state.stages[stageId];
+          return s && ALLOWED_STATUSES.includes(s.status)
+            && 'startedAt' in s && 'finishedAt' in s && 'requestId' in s
+            && 'errorCode' in s && 'errorMessage' in s && 'retries' in s;
+        });
+        const cp_03_appstate_ready = hasTopKeys && onlyTopKeys && stageShapeOk;
+
+        const cp_04_stage_runner_ready =
+          typeof runStage === 'function' &&
+          typeof completeStage === 'function' &&
+          typeof failStage === 'function' &&
+          typeof resetStage === 'function';
+
+        const cp_05_phase1_shell_stable = cp_01_scope_clean && cp_02_ui_phase1_only && cp_03_appstate_ready && cp_04_stage_runner_ready;
+
+        state.diagnostics.checkpoints = {
+          cp_01_scope_clean,
+          cp_02_ui_phase1_only,
+          cp_03_appstate_ready,
+          cp_04_stage_runner_ready,
+          cp_05_phase1_shell_stable
+        };
+      };
+
+      const buildCheckpointPayload = (checkpointId) => {
+        const validIds = Object.keys(state.diagnostics.checkpoints);
+        if (!validIds.includes(checkpointId)) {
+          throw new Error(`Invalid checkpoint id: ${checkpointId}`);
+        }
+        return {
+          checkpointId,
+          phase: 'phase1',
+          createdAt: nowIso(),
+          appVersion: state.meta.version,
+          appState: structuredClone(state)
+        };
+      };
+
+      const getState = () => structuredClone(state);
+
+      const dispatch = (action) => {
+        try {
+          switch (action.type) {
+            case 'PROJECT_UPDATE':
+              updateProjectText(action.stageId, action.text);
+              break;
+            case 'STAGE_RUN':
+              runStage(action.stageId);
+              break;
+            case 'STAGE_COMPLETE':
+              completeStage(action.stageId);
+              break;
+            case 'STAGE_FAIL':
+              failStage(action.stageId, action.errorCode, action.errorMessage);
+              break;
+            case 'STAGE_RESET':
+              resetStage(action.stageId);
+              break;
+            default:
+              throw new Error(`Unknown action type: ${action.type}`);
+          }
+          evaluateCheckpoints();
+        } catch (err) {
+          state.diagnostics.lastError = {
+            at: nowIso(),
+            stageId: action.stageId || 'system',
+            errorCode: 'DISPATCH_ERROR',
+            errorMessage: err instanceof Error ? err.message : String(err)
+          };
+          writeTrace('system.error', 'Dispatch failure', { action, error: state.diagnostics.lastError.errorMessage });
+          evaluateCheckpoints();
+          throw err;
+        }
+      };
+
+      evaluateCheckpoints();
+      writeTrace('system.ready', 'Phase 1 shell initialized');
+
+      return {
+        dispatch,
+        getState,
+        buildCheckpointPayload,
+        stageRegistry: structuredClone(STAGE_REGISTRY)
+      };
+    })();
+
+    // ===== Rendering logic =====
+    const UI = (() => {
+      const nodes = {
+        stagesRoot: document.getElementById('stagesRoot'),
+        stateRoot: document.getElementById('stateRoot'),
+        traceRoot: document.getElementById('traceRoot'),
+        checkpointRoot: document.getElementById('checkpointRoot'),
+        checkpointId: document.getElementById('checkpointId'),
+        buildCheckpointBtn: document.getElementById('buildCheckpointBtn'),
+        checkpointPayload: document.getElementById('checkpointPayload')
+      };
+
+      const escapeHtml = (text) => String(text)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+
+      const render = () => {
+        const state = AppCore.getState();
+
+        nodes.stagesRoot.innerHTML = AppCore.stageRegistry.map(stage => {
+          const s = state.stages[stage.id];
+          return `
+            <article class="stage" data-stage-id="${stage.id}">
+              <h3>${stage.label}</h3>
+              <div>Status: <strong>${s.status}</strong></div>
+              <div class="muted">startedAt: ${s.startedAt || '-'} | finishedAt: ${s.finishedAt || '-'} | retries: ${s.retries}</div>
+              <div class="muted">requestId: ${s.requestId || '-'}</div>
+              <div class="muted">error: ${escapeHtml(s.errorCode || '-')}: ${escapeHtml(s.errorMessage || '-')}</div>
+              <textarea data-role="project-input" data-stage-id="${stage.id}" placeholder="${stage.label} notes">${escapeHtml(state.project[stage.id])}</textarea>
+              <div class="actions">
+                <button data-role="run" data-stage-id="${stage.id}">Run</button>
+                <button data-role="complete" data-stage-id="${stage.id}">Complete</button>
+                <button data-role="fail" data-stage-id="${stage.id}">Fail</button>
+                <button data-role="reset" data-stage-id="${stage.id}">Reset</button>
+              </div>
+            </article>
+          `;
+        }).join('');
+
+        nodes.checkpointRoot.innerHTML = Object.entries(state.diagnostics.checkpoints)
+          .map(([k, v]) => `<div class="${v ? 'ok' : 'bad'}">${k}: ${v}</div>`)
+          .join('');
+
+        nodes.traceRoot.textContent = JSON.stringify(state.diagnostics.trace, null, 2);
+        nodes.stateRoot.textContent = JSON.stringify(state, null, 2);
+      };
+
+      const bindEvents = () => {
+        nodes.stagesRoot.addEventListener('click', (event) => {
+          const target = event.target;
+          if (!(target instanceof HTMLElement)) return;
+          const stageId = target.dataset.stageId;
+          const role = target.dataset.role;
+          if (!stageId || !role) return;
+
+          try {
+            if (role === 'run') AppCore.dispatch({ type: 'STAGE_RUN', stageId });
+            else if (role === 'complete') AppCore.dispatch({ type: 'STAGE_COMPLETE', stageId });
+            else if (role === 'fail') AppCore.dispatch({ type: 'STAGE_FAIL', stageId, errorCode: 'SIMULATED_ERROR', errorMessage: 'Manual failure for smoke testing' });
+            else if (role === 'reset') AppCore.dispatch({ type: 'STAGE_RESET', stageId });
+            render();
+          } catch (err) {
+            console.error('Stage action failed', err);
+            alert(`Stage action failed: ${err instanceof Error ? err.message : String(err)}`);
+            render();
+          }
+        });
+
+        nodes.stagesRoot.addEventListener('input', (event) => {
+          const target = event.target;
+          if (!(target instanceof HTMLTextAreaElement)) return;
+          if (target.dataset.role !== 'project-input') return;
+          const stageId = target.dataset.stageId;
+          if (!stageId) return;
+          try {
+            AppCore.dispatch({ type: 'PROJECT_UPDATE', stageId, text: target.value });
+            render();
+          } catch (err) {
+            console.error('Project update failed', err);
+            alert(`Project update failed: ${err instanceof Error ? err.message : String(err)}`);
+          }
+        });
+
+        nodes.buildCheckpointBtn.addEventListener('click', () => {
+          try {
+            const payload = AppCore.buildCheckpointPayload(nodes.checkpointId.value);
+            nodes.checkpointPayload.textContent = JSON.stringify(payload, null, 2);
+          } catch (err) {
+            console.error('Checkpoint payload build failed', err);
+            alert(`Checkpoint build failed: ${err instanceof Error ? err.message : String(err)}`);
+          }
+        });
+      };
+
+      return { render, bindEvents };
+    })();
+
+    UI.bindEvents();
+    UI.render();
+  </script>
+</body>
+</html>
