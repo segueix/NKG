@@ -13,7 +13,7 @@ NKG currently supports only pre-generation foundation work. It does **not**:
 This repository currently implements **Phase 1 only**.
 
 ### Phase 1 visible flow
-`idea → premise → structure → characters → world → chapter outline`
+`idea → premise → structure → characters → world → chapterOutline`
 
 ### Phase 1 checkpoints
 - `cp_01_scope_clean`
@@ -22,10 +22,10 @@ This repository currently implements **Phase 1 only**.
 - `cp_04_stage_runner_ready`
 - `cp_05_phase1_shell_stable`
 
-## 3-phase plan (high level)
-1. **Phase 1 (current):** shell + app state + stage runner + diagnostics for pre-NKG foundation.
-2. **Phase 2 (future):** deepen phase-1 workflow behavior and checkpoint quality without generating final NKG/Bible artifacts.
-3. **Phase 3 (future):** implement NKG generation, Bible generation, and export systems.
+## 3-phase plan (fixed)
+1. **Phase 1 (current):** pre-NKG functional foundation.
+2. **Phase 2 (future):** NKG generation.
+3. **Phase 3 (future):** Narrative Bible + export.
 
 ## Repository structure
 - `index.html` — single-file app shell.

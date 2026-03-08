@@ -10,12 +10,12 @@
   5. world
   6. chapterOutline
 - Centralized AppState and stage tracking.
-- Lightweight diagnostics/checkpoint reporting for Phase 1 stability.
+- Truthful lightweight diagnostics/checkpoint reporting for Phase 1 stability.
 - Basic checkpoint shell data model for future save/restore evolution.
 
 ## Out of scope (Phase 1)
 - NKG generation implementation.
-- Bible generation implementation.
+- Narrative Bible generation implementation.
 - Export implementation.
 - Manuscript writing and chapter prose writing.
 - Automated large-scale content generation pipelines.

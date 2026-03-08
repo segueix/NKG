@@ -18,6 +18,8 @@ Operational metadata for the running shell.
 - `version`
 - `createdAt`
 - `updatedAt`
+- `currentStage` (`stageId|null`)
+- `lastSuccessfulStage` (`stageId|null`)
 
 ## `stages`
 Dictionary keyed by stage id:
