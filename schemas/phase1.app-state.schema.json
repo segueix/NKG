@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nkg.local/schemas/phase1.app-state.schema.json",
+  "title": "NKG Phase 1 AppState",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["meta", "stages", "project", "outputs", "diagnostics"],
+  "properties": {
+    "meta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["appName", "phase", "version", "createdAt", "updatedAt"],
+      "properties": {
+        "appName": { "type": "string", "const": "NKG" },
+        "phase": { "type": "string", "const": "phase1" },
+        "version": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "stages": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["idea", "premise", "structure", "characters", "world", "chapterOutline"],
+      "properties": {
+        "idea": { "$ref": "#/$defs/stageState" },
+        "premise": { "$ref": "#/$defs/stageState" },
+        "structure": { "$ref": "#/$defs/stageState" },
+        "characters": { "$ref": "#/$defs/stageState" },
+        "world": { "$ref": "#/$defs/stageState" },
+        "chapterOutline": { "$ref": "#/$defs/stageState" }
+      }
+    },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["idea", "premise", "structure", "characters", "world", "chapterOutline"],
+      "properties": {
+        "idea": { "type": "string" },
+        "premise": { "type": "string" },
+        "structure": { "type": "string" },
+        "characters": { "type": "string" },
+        "world": { "type": "string" },
+        "chapterOutline": { "type": "string" }
+      }
+    },
+    "outputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nkg", "bible"],
+      "properties": {
+        "nkg": {
+          "type": ["object", "null"],
+          "description": "Phase 1 placeholder only"
+        },
+        "bible": {
+          "type": ["object", "null"],
+          "description": "Phase 1 placeholder only"
+        }
+      }
+    },
+    "diagnostics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["checkpoints", "trace", "lastError"],
+      "properties": {
+        "checkpoints": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "cp_01_scope_clean",
+            "cp_02_ui_phase1_only",
+            "cp_03_appstate_ready",
+            "cp_04_stage_runner_ready",
+            "cp_05_phase1_shell_stable"
+          ],
+          "properties": {
+            "cp_01_scope_clean": { "type": "boolean" },
+            "cp_02_ui_phase1_only": { "type": "boolean" },
+            "cp_03_appstate_ready": { "type": "boolean" },
+            "cp_04_stage_runner_ready": { "type": "boolean" },
+            "cp_05_phase1_shell_stable": { "type": "boolean" }
+          }
+        },
+        "trace": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/traceEntry" }
+        },
+        "lastError": {
+          "anyOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["at", "stageId", "errorCode", "errorMessage"],
+              "properties": {
+                "at": { "type": "string", "format": "date-time" },
+                "stageId": { "type": "string" },
+                "errorCode": { "type": "string" },
+                "errorMessage": { "type": "string" }
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
+  "$defs": {
+    "stageState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "startedAt", "finishedAt", "requestId", "errorCode", "errorMessage", "retries"],
+      "properties": {
+        "status": { "type": "string", "enum": ["idle", "running", "ok", "error"] },
+        "startedAt": { "type": ["string", "null"], "format": "date-time" },
+        "finishedAt": { "type": ["string", "null"], "format": "date-time" },
+        "requestId": { "type": ["string", "null"] },
+        "errorCode": { "type": ["string", "null"] },
+        "errorMessage": { "type": ["string", "null"] },
+        "retries": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "traceEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["at", "type", "message"],
+      "properties": {
+        "at": { "type": "string", "format": "date-time" },
+        "type": { "type": "string" },
+        "message": { "type": "string" },
+        "context": { "type": "object" }
+      }
+    }
+  }
+}

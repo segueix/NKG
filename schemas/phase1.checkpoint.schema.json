@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nkg.local/schemas/phase1.checkpoint.schema.json",
+  "title": "NKG Phase 1 Checkpoint",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["checkpointId", "phase", "createdAt", "appVersion", "appState"],
+  "properties": {
+    "checkpointId": {
+      "type": "string",
+      "enum": [
+        "cp_01_scope_clean",
+        "cp_02_ui_phase1_only",
+        "cp_03_appstate_ready",
+        "cp_04_stage_runner_ready",
+        "cp_05_phase1_shell_stable"
+      ]
+    },
+    "phase": { "type": "string", "const": "phase1" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "appVersion": { "type": "string" },
+    "notes": { "type": "string" },
+    "appState": {
+      "$ref": "./phase1.app-state.schema.json"
+    }
+  }
+}

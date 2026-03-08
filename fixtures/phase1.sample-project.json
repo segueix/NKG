@@ -1,0 +1,97 @@
+{
+  "meta": {
+    "appName": "NKG",
+    "phase": "phase1",
+    "version": "0.1.0",
+    "createdAt": "2026-01-01T00:00:00.000Z",
+    "updatedAt": "2026-01-01T00:00:00.000Z"
+  },
+  "stages": {
+    "idea": {
+      "status": "ok",
+      "startedAt": "2026-01-01T00:01:00.000Z",
+      "finishedAt": "2026-01-01T00:02:00.000Z",
+      "requestId": "req_idea_001",
+      "errorCode": null,
+      "errorMessage": null,
+      "retries": 0
+    },
+    "premise": {
+      "status": "idle",
+      "startedAt": null,
+      "finishedAt": null,
+      "requestId": null,
+      "errorCode": null,
+      "errorMessage": null,
+      "retries": 0
+    },
+    "structure": {
+      "status": "idle",
+      "startedAt": null,
+      "finishedAt": null,
+      "requestId": null,
+      "errorCode": null,
+      "errorMessage": null,
+      "retries": 0
+    },
+    "characters": {
+      "status": "idle",
+      "startedAt": null,
+      "finishedAt": null,
+      "requestId": null,
+      "errorCode": null,
+      "errorMessage": null,
+      "retries": 0
+    },
+    "world": {
+      "status": "idle",
+      "startedAt": null,
+      "finishedAt": null,
+      "requestId": null,
+      "errorCode": null,
+      "errorMessage": null,
+      "retries": 0
+    },
+    "chapterOutline": {
+      "status": "idle",
+      "startedAt": null,
+      "finishedAt": null,
+      "requestId": null,
+      "errorCode": null,
+      "errorMessage": null,
+      "retries": 0
+    }
+  },
+  "project": {
+    "idea": "A city survives by trading memories instead of money.",
+    "premise": "A novice memory broker uncovers a conspiracy encoded in corrupted recollections.",
+    "structure": "Three-act mystery with escalating memory-loss stakes.",
+    "characters": "Lead broker, rival archivist, regulator, and memory-smuggler ally.",
+    "world": "Dense canal city where memory vaults power public infrastructure.",
+    "chapterOutline": "12 chapter beats from inciting corruption event to vault breach revelation."
+  },
+  "outputs": {
+    "nkg": null,
+    "bible": null
+  },
+  "diagnostics": {
+    "checkpoints": {
+      "cp_01_scope_clean": true,
+      "cp_02_ui_phase1_only": true,
+      "cp_03_appstate_ready": true,
+      "cp_04_stage_runner_ready": true,
+      "cp_05_phase1_shell_stable": true
+    },
+    "trace": [
+      {
+        "at": "2026-01-01T00:02:00.000Z",
+        "type": "stage.ok",
+        "message": "idea stage completed",
+        "context": {
+          "stageId": "idea"
+        }
+      }
+    ],
+    "lastError": null
+  }
+}
