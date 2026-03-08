@@ -41,37 +41,39 @@ Each stage uses the same structure:
 - `retries`
 
 ## `project.themePipeline` (first-slice target shape)
-Planned pipeline input/work area:
+Pipeline input/work area:
 - `config.temperatures`
   - `styleAnalysis` = `0.2`
+  - `settingExpansion` = `0.55`
   - `themeIdeation` = `0.9`
   - `themeSelection` = `0.35`
 - `authorReference`
-- `sampleParagraphs` (exactly 3)
-- `desiredSetting`
-- `selectedThemeIndex`
+- `styleSampleText`
+- `settingSeed`
 - `pass1`
   - `state`
   - `styleProfile`
   - `targetNovelMode`
 - `pass2`
   - `state`
-  - `candidateThemes`
+  - `settingProfile`
 - `pass3`
+  - `state`
+  - `candidateThemes`
+- `pass4`
   - `state`
   - `selectedThemeTitle`
   - `selectedThemeRationale`
 
 ## `outputs.nkg` (first official write target)
-For the first real Phase 2 slice, successful pass 3 should write this richer structure to `AppState.outputs.nkg`:
 
 ```json
 {
   "authorReference": "string",
   "styleSource": {
     "authorName": "string",
-    "sampleParagraphs": ["string", "string", "string"],
-    "settingIntent": "string"
+    "sampleText": "string",
+    "settingSeed": "string"
   },
   "styleProfile": {
     "rhythm": "string",
@@ -83,6 +85,16 @@ For the first real Phase 2 slice, successful pass 3 should write this richer str
     "actionVsReflection": "string",
     "narrativePressure": "string",
     "proseMode": "string"
+  },
+  "settingProfile": {
+    "environmentType": "string",
+    "geographicTone": "string",
+    "climateMood": "string",
+    "socialTexture": "string",
+    "institutionalPresence": "string",
+    "publicVsPrivateTension": "string",
+    "recurringAtmosphericMotifs": ["string"],
+    "fitRationale": "string"
   },
   "targetNovelMode": {
     "label": "string",
@@ -105,8 +117,14 @@ For the first real Phase 2 slice, successful pass 3 should write this richer str
 ```
 
 ## `diagnostics`
-Recommended visibility for the first Phase 2 slice:
+Required visibility for the first Phase 2 slice:
 - `checkpoints` (`cp_01..cp_05` + `cp_11..cp_15`)
 - `trace`
 - `lastError`
-- optional stage-specific diagnostics for `nkgStyleTheme`
+- `nkgStyleTheme`
+  - `currentPhase`
+  - `currentStage`
+  - `pass1`, `pass2`, `pass3`, `pass4` status snapshots
+  - `requestIds`
+  - `warnings`
+  - `lastError`

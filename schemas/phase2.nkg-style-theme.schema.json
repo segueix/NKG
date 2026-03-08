@@ -8,6 +8,7 @@
     "authorReference",
     "styleSource",
     "styleProfile",
+    "settingProfile",
     "targetNovelMode",
     "themeExploration"
   ],
@@ -19,16 +20,11 @@
     "styleSource": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["authorName", "sampleParagraphs", "settingIntent"],
+      "required": ["authorName", "sampleText", "settingSeed"],
       "properties": {
         "authorName": { "type": "string", "minLength": 1 },
-        "sampleParagraphs": {
-          "type": "array",
-          "minItems": 3,
-          "maxItems": 3,
-          "items": { "type": "string", "minLength": 1 }
-        },
-        "settingIntent": { "type": "string", "minLength": 1 }
+        "sampleText": { "type": "string", "minLength": 1 },
+        "settingSeed": { "type": "string", "minLength": 1 }
       }
     },
     "styleProfile": {
@@ -55,6 +51,34 @@
         "actionVsReflection": { "type": "string", "minLength": 1 },
         "narrativePressure": { "type": "string", "minLength": 1 },
         "proseMode": { "type": "string", "minLength": 1 }
+      }
+    },
+    "settingProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "environmentType",
+        "geographicTone",
+        "climateMood",
+        "socialTexture",
+        "institutionalPresence",
+        "publicVsPrivateTension",
+        "recurringAtmosphericMotifs",
+        "fitRationale"
+      ],
+      "properties": {
+        "environmentType": { "type": "string", "minLength": 1 },
+        "geographicTone": { "type": "string", "minLength": 1 },
+        "climateMood": { "type": "string", "minLength": 1 },
+        "socialTexture": { "type": "string", "minLength": 1 },
+        "institutionalPresence": { "type": "string", "minLength": 1 },
+        "publicVsPrivateTension": { "type": "string", "minLength": 1 },
+        "recurringAtmosphericMotifs": {
+          "type": "array",
+          "minItems": 3,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "fitRationale": { "type": "string", "minLength": 1 }
       }
     },
     "targetNovelMode": {
