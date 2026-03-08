@@ -19,7 +19,10 @@
     "phase": { "type": "string", "const": "phase1" },
     "createdAt": { "type": "string", "format": "date-time" },
     "appVersion": { "type": "string" },
-    "notes": { "type": "string" },
+    "notes": {
+      "type": "string",
+      "description": "Optional operator note. Phase 1 checkpoint payload remains lightweight."
+    },
     "appState": {
       "$ref": "./phase1.app-state.schema.json"
     }

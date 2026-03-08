@@ -4,7 +4,9 @@
     "phase": "phase1",
     "version": "0.1.0",
     "createdAt": "2026-01-01T00:00:00.000Z",
-    "updatedAt": "2026-01-01T00:00:00.000Z"
+    "updatedAt": "2026-01-01T00:00:00.000Z",
+    "currentStage": null,
+    "lastSuccessfulStage": "idea"
   },
   "stages": {
     "idea": {

@@ -4,57 +4,162 @@
   "title": "NKG Phase 1 AppState",
   "type": "object",
   "additionalProperties": false,
-  "required": ["meta", "stages", "project", "outputs", "diagnostics"],
+  "required": [
+    "meta",
+    "stages",
+    "project",
+    "outputs",
+    "diagnostics"
+  ],
   "properties": {
     "meta": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["appName", "phase", "version", "createdAt", "updatedAt"],
+      "required": [
+        "appName",
+        "phase",
+        "version",
+        "createdAt",
+        "updatedAt",
+        "currentStage",
+        "lastSuccessfulStage"
+      ],
       "properties": {
-        "appName": { "type": "string", "const": "NKG" },
-        "phase": { "type": "string", "const": "phase1" },
-        "version": { "type": "string" },
-        "createdAt": { "type": "string", "format": "date-time" },
-        "updatedAt": { "type": "string", "format": "date-time" }
+        "appName": {
+          "type": "string",
+          "const": "NKG"
+        },
+        "phase": {
+          "type": "string",
+          "const": "phase1"
+        },
+        "version": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "currentStage": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "idea",
+            "premise",
+            "structure",
+            "characters",
+            "world",
+            "chapterOutline",
+            null
+          ]
+        },
+        "lastSuccessfulStage": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "idea",
+            "premise",
+            "structure",
+            "characters",
+            "world",
+            "chapterOutline",
+            null
+          ]
+        }
       }
     },
     "stages": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["idea", "premise", "structure", "characters", "world", "chapterOutline"],
+      "required": [
+        "idea",
+        "premise",
+        "structure",
+        "characters",
+        "world",
+        "chapterOutline"
+      ],
       "properties": {
-        "idea": { "$ref": "#/$defs/stageState" },
-        "premise": { "$ref": "#/$defs/stageState" },
-        "structure": { "$ref": "#/$defs/stageState" },
-        "characters": { "$ref": "#/$defs/stageState" },
-        "world": { "$ref": "#/$defs/stageState" },
-        "chapterOutline": { "$ref": "#/$defs/stageState" }
+        "idea": {
+          "$ref": "#/$defs/stageState"
+        },
+        "premise": {
+          "$ref": "#/$defs/stageState"
+        },
+        "structure": {
+          "$ref": "#/$defs/stageState"
+        },
+        "characters": {
+          "$ref": "#/$defs/stageState"
+        },
+        "world": {
+          "$ref": "#/$defs/stageState"
+        },
+        "chapterOutline": {
+          "$ref": "#/$defs/stageState"
+        }
       }
     },
     "project": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["idea", "premise", "structure", "characters", "world", "chapterOutline"],
+      "required": [
+        "idea",
+        "premise",
+        "structure",
+        "characters",
+        "world",
+        "chapterOutline"
+      ],
       "properties": {
-        "idea": { "type": "string" },
-        "premise": { "type": "string" },
-        "structure": { "type": "string" },
-        "characters": { "type": "string" },
-        "world": { "type": "string" },
-        "chapterOutline": { "type": "string" }
+        "idea": {
+          "type": "string"
+        },
+        "premise": {
+          "type": "string"
+        },
+        "structure": {
+          "type": "string"
+        },
+        "characters": {
+          "type": "string"
+        },
+        "world": {
+          "type": "string"
+        },
+        "chapterOutline": {
+          "type": "string"
+        }
       }
     },
     "outputs": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["nkg", "bible"],
+      "required": [
+        "nkg",
+        "bible"
+      ],
       "properties": {
         "nkg": {
-          "type": ["object", "null"],
+          "type": [
+            "object",
+            "null"
+          ],
           "description": "Phase 1 placeholder only"
         },
         "bible": {
-          "type": ["object", "null"],
+          "type": [
+            "object",
+            "null"
+          ],
           "description": "Phase 1 placeholder only"
         }
       }
@@ -62,7 +167,11 @@
     "diagnostics": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["checkpoints", "trace", "lastError"],
+      "required": [
+        "checkpoints",
+        "trace",
+        "lastError"
+      ],
       "properties": {
         "checkpoints": {
           "type": "object",
@@ -75,29 +184,57 @@
             "cp_05_phase1_shell_stable"
           ],
           "properties": {
-            "cp_01_scope_clean": { "type": "boolean" },
-            "cp_02_ui_phase1_only": { "type": "boolean" },
-            "cp_03_appstate_ready": { "type": "boolean" },
-            "cp_04_stage_runner_ready": { "type": "boolean" },
-            "cp_05_phase1_shell_stable": { "type": "boolean" }
+            "cp_01_scope_clean": {
+              "type": "boolean"
+            },
+            "cp_02_ui_phase1_only": {
+              "type": "boolean"
+            },
+            "cp_03_appstate_ready": {
+              "type": "boolean"
+            },
+            "cp_04_stage_runner_ready": {
+              "type": "boolean"
+            },
+            "cp_05_phase1_shell_stable": {
+              "type": "boolean"
+            }
           }
         },
         "trace": {
           "type": "array",
-          "items": { "$ref": "#/$defs/traceEntry" }
+          "items": {
+            "$ref": "#/$defs/traceEntry"
+          }
         },
         "lastError": {
           "anyOf": [
-            { "type": "null" },
+            {
+              "type": "null"
+            },
             {
               "type": "object",
               "additionalProperties": false,
-              "required": ["at", "stageId", "errorCode", "errorMessage"],
+              "required": [
+                "at",
+                "stageId",
+                "errorCode",
+                "errorMessage"
+              ],
               "properties": {
-                "at": { "type": "string", "format": "date-time" },
-                "stageId": { "type": "string" },
-                "errorCode": { "type": "string" },
-                "errorMessage": { "type": "string" }
+                "at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "stageId": {
+                  "type": "string"
+                },
+                "errorCode": {
+                  "type": "string"
+                },
+                "errorMessage": {
+                  "type": "string"
+                }
               }
             }
           ]
@@ -109,26 +246,85 @@
     "stageState": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["status", "startedAt", "finishedAt", "requestId", "errorCode", "errorMessage", "retries"],
+      "required": [
+        "status",
+        "startedAt",
+        "finishedAt",
+        "requestId",
+        "errorCode",
+        "errorMessage",
+        "retries"
+      ],
       "properties": {
-        "status": { "type": "string", "enum": ["idle", "running", "ok", "error"] },
-        "startedAt": { "type": ["string", "null"], "format": "date-time" },
-        "finishedAt": { "type": ["string", "null"], "format": "date-time" },
-        "requestId": { "type": ["string", "null"] },
-        "errorCode": { "type": ["string", "null"] },
-        "errorMessage": { "type": ["string", "null"] },
-        "retries": { "type": "integer", "minimum": 0 }
+        "status": {
+          "type": "string",
+          "enum": [
+            "idle",
+            "running",
+            "ok",
+            "error"
+          ]
+        },
+        "startedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "finishedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "requestId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "errorCode": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "errorMessage": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "retries": {
+          "type": "integer",
+          "minimum": 0
+        }
       }
     },
     "traceEntry": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["at", "type", "message"],
+      "required": [
+        "at",
+        "type",
+        "message"
+      ],
       "properties": {
-        "at": { "type": "string", "format": "date-time" },
-        "type": { "type": "string" },
-        "message": { "type": "string" },
-        "context": { "type": "object" }
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "type": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "context": {
+          "type": "object"
+        }
       }
     }
   }

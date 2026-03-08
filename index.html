@@ -34,6 +34,8 @@
 
       <aside class="panel">
         <h2>Diagnostics</h2>
+        <div id="diagnosticsSummary"></div>
+        <h3 style="margin-top: 1rem;">Checkpoint status</h3>
         <div id="checkpointRoot"></div>
         <h3 style="margin-top: 1rem;">Checkpoint shell</h3>
         <label for="checkpointId">Checkpoint ID:</label>
@@ -70,6 +72,7 @@
 
     const STAGE_IDS = STAGE_REGISTRY.map(s => s.id);
     const ALLOWED_STATUSES = ['idle', 'running', 'ok', 'error'];
+    const TOP_LEVEL_STATE_KEYS = ['meta', 'stages', 'project', 'outputs', 'diagnostics'];
 
     // ===== Business/state logic =====
     const AppCore = (() => {
@@ -92,7 +95,9 @@
           phase: 'phase1',
           version: '0.1.0',
           createdAt: nowIso(),
-          updatedAt: nowIso()
+          updatedAt: nowIso(),
+          currentStage: null,
+          lastSuccessfulStage: null
         },
         stages: Object.fromEntries(STAGE_IDS.map(id => [id, createInitialStageState()])),
         project: Object.fromEntries(STAGE_IDS.map(id => [id, ''])),
@@ -114,16 +119,13 @@
       };
 
       const state = structuredClone(initialState);
+      let uiSnapshot = {
+        renderedStageIds: []
+      };
 
       const assertStageId = (stageId) => {
         if (!STAGE_IDS.includes(stageId)) {
           throw new Error(`Unknown stage: ${stageId}`);
-        }
-      };
-
-      const assertStatus = (status) => {
-        if (!ALLOWED_STATUSES.includes(status)) {
-          throw new Error(`Invalid status: ${status}`);
         }
       };
 
@@ -134,6 +136,14 @@
 
       const setMetaUpdatedAt = () => {
         state.meta.updatedAt = nowIso();
+      };
+
+      const setCurrentStage = (stageIdOrNull) => {
+        state.meta.currentStage = stageIdOrNull;
+      };
+
+      const setLastSuccessfulStage = (stageIdOrNull) => {
+        state.meta.lastSuccessfulStage = stageIdOrNull;
       };
 
       const updateProjectText = (stageId, text) => {
@@ -152,6 +162,7 @@
         stage.requestId = mkRequestId(stageId);
         stage.errorCode = null;
         stage.errorMessage = null;
+        setCurrentStage(stageId);
         setMetaUpdatedAt();
         writeTrace('stage.running', `${stageId} started`, { stageId, requestId: stage.requestId });
       };
@@ -164,6 +175,8 @@
         if (!stage.requestId) stage.requestId = mkRequestId(stageId);
         stage.errorCode = null;
         stage.errorMessage = null;
+        setCurrentStage(null);
+        setLastSuccessfulStage(stageId);
         setMetaUpdatedAt();
         writeTrace('stage.ok', `${stageId} completed`, { stageId });
       };
@@ -177,6 +190,7 @@
         stage.errorCode = String(errorCode);
         stage.errorMessage = String(errorMessage);
         stage.retries += 1;
+        setCurrentStage(null);
         state.diagnostics.lastError = {
           at: nowIso(),
           stageId,
@@ -190,31 +204,73 @@
       const resetStage = (stageId) => {
         assertStageId(stageId);
         state.stages[stageId] = createInitialStageState();
+        if (state.meta.currentStage === stageId) {
+          setCurrentStage(null);
+        }
+        if (state.meta.lastSuccessfulStage === stageId) {
+          setLastSuccessfulStage(null);
+        }
         setMetaUpdatedAt();
         writeTrace('stage.reset', `${stageId} reset`, { stageId });
       };
 
       const evaluateCheckpoints = () => {
-        const cp_01_scope_clean = true;
-        const cp_02_ui_phase1_only = STAGE_IDS.length === 6 && STAGE_IDS.join(',') === 'idea,premise,structure,characters,world,chapterOutline';
+        const noForbiddenOutputs = state.outputs.nkg === null && state.outputs.bible === null;
+        const scopeTextClean = !state.diagnostics.trace.some(entry => {
+          const normalizedMessage = String(entry.message || '').toLowerCase();
+          return normalizedMessage.includes('manuscript') || normalizedMessage.includes('prose writing');
+        });
+        const cp_01_scope_clean =
+          state.meta.phase === 'phase1' &&
+          STAGE_IDS.length === 6 &&
+          noForbiddenOutputs &&
+          scopeTextClean;
 
-        const hasTopKeys = ['meta', 'stages', 'project', 'outputs', 'diagnostics'].every(k => Object.prototype.hasOwnProperty.call(state, k));
-        const onlyTopKeys = Object.keys(state).length === 5;
+        const expectedStageIdList = 'idea,premise,structure,characters,world,chapterOutline';
+        const renderedStageIdList = uiSnapshot.renderedStageIds.join(',');
+        const cp_02_ui_phase1_only =
+          renderedStageIdList === expectedStageIdList &&
+          uiSnapshot.renderedStageIds.length === STAGE_IDS.length;
+
+        const hasTopKeys = TOP_LEVEL_STATE_KEYS.every(k => Object.prototype.hasOwnProperty.call(state, k));
+        const onlyTopKeys = Object.keys(state).length === TOP_LEVEL_STATE_KEYS.length;
+        const metaShapeOk =
+          typeof state.meta.appName === 'string' &&
+          state.meta.phase === 'phase1' &&
+          typeof state.meta.version === 'string' &&
+          typeof state.meta.createdAt === 'string' &&
+          typeof state.meta.updatedAt === 'string' &&
+          (state.meta.currentStage === null || STAGE_IDS.includes(state.meta.currentStage)) &&
+          (state.meta.lastSuccessfulStage === null || STAGE_IDS.includes(state.meta.lastSuccessfulStage));
         const stageShapeOk = STAGE_IDS.every(stageId => {
           const s = state.stages[stageId];
           return s && ALLOWED_STATUSES.includes(s.status)
             && 'startedAt' in s && 'finishedAt' in s && 'requestId' in s
             && 'errorCode' in s && 'errorMessage' in s && 'retries' in s;
         });
-        const cp_03_appstate_ready = hasTopKeys && onlyTopKeys && stageShapeOk;
+        const cp_03_appstate_ready = hasTopKeys && onlyTopKeys && metaShapeOk && stageShapeOk;
 
-        const cp_04_stage_runner_ready =
+        const stageRegistryValid =
+          STAGE_REGISTRY.length === STAGE_IDS.length &&
+          STAGE_REGISTRY.every((entry, index) => entry && entry.id === STAGE_IDS[index] && typeof entry.label === 'string');
+        const runnerFnsReady =
           typeof runStage === 'function' &&
           typeof completeStage === 'function' &&
           typeof failStage === 'function' &&
           typeof resetStage === 'function';
+        const allStageStatesValid = STAGE_IDS.every(stageId => {
+          const stage = state.stages[stageId];
+          return ALLOWED_STATUSES.includes(stage.status)
+            && typeof stage.retries === 'number'
+            && stage.retries >= 0;
+        });
+        const cp_04_stage_runner_ready = stageRegistryValid && runnerFnsReady && allStageStatesValid;
 
-        const cp_05_phase1_shell_stable = cp_01_scope_clean && cp_02_ui_phase1_only && cp_03_appstate_ready && cp_04_stage_runner_ready;
+        const diagnosticsReady =
+          Array.isArray(state.diagnostics.trace) &&
+          Object.keys(state.diagnostics.checkpoints).length === 5;
+        const cp_05_phase1_shell_stable =
+          cp_01_scope_clean && cp_02_ui_phase1_only && cp_03_appstate_ready && cp_04_stage_runner_ready && diagnosticsReady;
 
         state.diagnostics.checkpoints = {
           cp_01_scope_clean,
@@ -223,6 +279,15 @@
           cp_04_stage_runner_ready,
           cp_05_phase1_shell_stable
         };
+      };
+
+      const updateUiSnapshot = (nextUiSnapshot) => {
+        uiSnapshot = {
+          renderedStageIds: Array.isArray(nextUiSnapshot?.renderedStageIds)
+            ? [...nextUiSnapshot.renderedStageIds]
+            : []
+        };
+        evaluateCheckpoints();
       };
 
       const buildCheckpointPayload = (checkpointId) => {
@@ -283,6 +348,7 @@
         dispatch,
         getState,
         buildCheckpointPayload,
+        updateUiSnapshot,
         stageRegistry: structuredClone(STAGE_REGISTRY)
       };
     })();
@@ -293,6 +359,7 @@
         stagesRoot: document.getElementById('stagesRoot'),
         stateRoot: document.getElementById('stateRoot'),
         traceRoot: document.getElementById('traceRoot'),
+        diagnosticsSummary: document.getElementById('diagnosticsSummary'),
         checkpointRoot: document.getElementById('checkpointRoot'),
         checkpointId: document.getElementById('checkpointId'),
         buildCheckpointBtn: document.getElementById('buildCheckpointBtn'),
@@ -328,6 +395,17 @@
             </article>
           `;
         }).join('');
+
+        AppCore.updateUiSnapshot({
+          renderedStageIds: [...nodes.stagesRoot.querySelectorAll('[data-stage-id]')].map(n => n.getAttribute('data-stage-id'))
+        });
+
+        nodes.diagnosticsSummary.innerHTML = [
+          `<div><strong>Current phase:</strong> ${state.meta.phase}</div>`,
+          `<div><strong>Current stage:</strong> ${state.meta.currentStage || '-'}</div>`,
+          `<div><strong>Last successful stage:</strong> ${state.meta.lastSuccessfulStage || '-'}</div>`,
+          `<div><strong>Last error:</strong> ${state.diagnostics.lastError ? escapeHtml(`${state.diagnostics.lastError.stageId} (${state.diagnostics.lastError.errorCode}) ${state.diagnostics.lastError.errorMessage}`) : '-'}</div>`
+        ].join('');
 
         nodes.checkpointRoot.innerHTML = Object.entries(state.diagnostics.checkpoints)
           .map(([k, v]) => `<div class="${v ? 'ok' : 'bad'}">${k}: ${v}</div>`)

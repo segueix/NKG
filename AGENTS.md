@@ -3,6 +3,11 @@
 ## Mission
 Build and maintain NKG as a single-file narrative project generator that supports fiction project foundation work up to a stable pre-NKG checkpoint.
 
+## Product roadmap (fixed)
+- Phase 1: pre-NKG functional foundation.
+- Phase 2: NKG generation.
+- Phase 3: Narrative Bible + export.
+
 ## Scope (current)
 - Implement and stabilize **Phase 1 only**:
   - `idea`

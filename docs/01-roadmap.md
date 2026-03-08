@@ -1,37 +1,29 @@
 # 01 — Roadmap
 
 ## Phase 1 (implemented now)
-Goal: establish a stable pre-NKG shell.
+Goal: pre-NKG functional foundation.
 
 Includes:
 - Single-file app UI for six foundational stages.
-- Centralized AppState model.
+- Centralized AppState model with phase-aware metadata.
 - Stage registry and stage run lifecycle tracking.
-- Phase 1 checkpoint diagnostics.
+- Phase 1 checkpoint diagnostics and payload shell generation.
 
 Stops before:
 - NKG generation
-- Bible generation
+- Narrative Bible generation
 - Export
 
 ## Phase 2 (next)
-Goal: deepen foundation workflow quality and resilience while staying pre-generation.
+Goal: NKG generation.
 
 Planned direction:
-- richer validations and guardrails per stage,
-- improved checkpoint save/restore behavior,
-- better diagnostics detail and operator visibility,
-- stronger consistency checks across stage outputs.
-
-Still excludes:
-- final NKG artifact generation,
-- Bible artifact generation,
-- export pipeline.
+- Generate NKG artifact(s) from completed Phase 1 project foundation.
+- Keep stage runner and diagnostics integration clear during generation.
 
 ## Phase 3 (later)
-Goal: introduce generation and packaging systems.
+Goal: Narrative Bible + export.
 
 Planned direction:
-- NKG generation implementation,
-- Bible generation implementation,
-- export implementation.
+- Implement Narrative Bible generation.
+- Implement export packaging.
