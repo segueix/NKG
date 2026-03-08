@@ -56,7 +56,7 @@
 
     <section class="panel" style="margin-top: 1rem;">
       <h2>Main generation flow</h2>
-      <p class="muted">User path: author reference + 3 samples + short setting seed → run generation once → auto-populated <strong>NKG projecte 1</strong>.</p>
+      <p class="muted">User path: author reference + style sample text + setting seed → run generation once → auto-populated <strong>NKG projecte 1</strong>.</p>
       <div id="themePipelineRoot"></div>
     </section>
 
@@ -183,17 +183,16 @@
           themePipeline: {
             config: structuredClone(NKG_STYLE_THEME_CONFIG),
             authorReference: '',
-            sampleParagraphs: ['', '', ''],
+            styleSampleText: '',
             settingSeed: '',
-            selectedThemeIndex: 0,
             pass1: {
               state: createPassState(),
-              styleProfile: null
+              styleProfile: null,
+              targetNovelMode: null
             },
             pass2: {
               state: createPassState(),
-              settingProfile: null,
-              targetNovelMode: null
+              settingProfile: null
             },
             pass3: {
               state: createPassState(),
@@ -286,8 +285,8 @@
       const resetPipelineOutputs = ({ clearNkgOutput = false } = {}) => {
         const pipeline = state.project.themePipeline;
         pipeline.pass1.styleProfile = null;
+        pipeline.pass1.targetNovelMode = null;
         pipeline.pass2.settingProfile = null;
-        pipeline.pass2.targetNovelMode = null;
         pipeline.pass3.candidateThemes = [];
         pipeline.pass4.selectedThemeTitle = '';
         pipeline.pass4.selectedThemeRationale = '';
@@ -306,35 +305,23 @@
         writeTrace('project.update', `${stageId} text updated`, { stageId });
       };
 
-      const updateThemePipelineInput = ({ field, value, paragraphIndex }) => {
+      const updateThemePipelineInput = ({ field, value }) => {
         const pipeline = state.project.themePipeline;
         if (field === 'authorReference') pipeline.authorReference = String(value ?? '');
         else if (field === 'settingSeed') pipeline.settingSeed = String(value ?? '');
-        else if (field === 'sampleParagraph') {
-          if (!Number.isInteger(paragraphIndex) || paragraphIndex < 0 || paragraphIndex > 2) {
-            throw new Error('Invalid paragraph index. Expected 0, 1, or 2.');
-          }
-          pipeline.sampleParagraphs[paragraphIndex] = String(value ?? '');
-        } else if (field === 'selectedThemeIndex') {
-          const nextIndex = Number(value);
-          if (!Number.isInteger(nextIndex) || nextIndex < 0) throw new Error('selectedThemeIndex must be a non-negative integer.');
-          pipeline.selectedThemeIndex = nextIndex;
-        } else {
+        else if (field === 'styleSampleText') pipeline.styleSampleText = String(value ?? '');
+        else {
           throw new Error(`Unknown theme pipeline field: ${field}`);
         }
         setMetaUpdatedAt();
-        writeTrace('pipeline.input.update', 'Theme pipeline input updated', { field, paragraphIndex });
+        writeTrace('pipeline.input.update', 'Theme pipeline input updated', { field });
       };
 
       const inputValidationErrors = () => {
-        const { authorReference, sampleParagraphs, settingSeed } = state.project.themePipeline;
+        const { authorReference, styleSampleText, settingSeed } = state.project.themePipeline;
         const errors = [];
         if (!authorReference.trim()) errors.push('Author reference must be non-empty.');
-        const missingSamples = sampleParagraphs
-          .map((paragraph, index) => ({ paragraph, index }))
-          .filter(x => !String(x.paragraph).trim())
-          .map(x => x.index + 1);
-        if (missingSamples.length > 0) errors.push(`All 3 sample paragraphs must be non-empty (missing: ${missingSamples.join(', ')}).`);
+        if (!styleSampleText.trim()) errors.push('Style sample text must be non-empty.');
         if (!settingSeed.trim()) errors.push('Setting seed must be non-empty.');
         return errors;
       };
@@ -349,7 +336,7 @@
 
       const computeStyleProfile = () => {
         const pipeline = state.project.themePipeline;
-        const sampleText = pipeline.sampleParagraphs.join(' ').trim();
+        const sampleText = pipeline.styleSampleText.trim();
         const tokens = tokenize(sampleText);
         const sentenceParts = sampleText.split(/[.!?]+/).map(v => v.trim()).filter(Boolean);
         const avgSentenceLength = sentenceParts.length > 0 ? tokens.length / sentenceParts.length : 0;
@@ -373,60 +360,71 @@
         };
       };
 
+      const inferTargetNovelMode = ({ styleProfile, styleSampleText }) => {
+        const tokens = tokenize(styleSampleText);
+        const reflectiveSignals = tokens.filter(t => ['remember', 'doubt', 'regret', 'wonder', 'grief', 'shame', 'truth'].includes(t)).length;
+        const institutionalSignals = tokens.filter(t => ['office', 'court', 'permit', 'board', 'policy', 'committee', 'records'].includes(t)).length;
+        const pressureSignals = tokens.filter(t => ['deadline', 'risk', 'urgent', 'before', 'threat', 'exposure'].includes(t)).length;
+
+        if (institutionalSignals >= 3 || /institution|bureaucr|civic/.test(styleProfile.narrativePressure)) {
+          return {
+            label: 'institutional-pressure psychological narrative',
+            explanation: 'The style leans toward consequence-aware decisions where personal ethics collide with systems and procedures.'
+          };
+        }
+        if (reflectiveSignals > pressureSignals) {
+          return {
+            label: 'interior moral-fracture narrative',
+            explanation: 'The style supports a protagonist shaped by inner contradiction, memory, and escalating moral self-interrogation.'
+          };
+        }
+        return {
+          label: 'high-pressure consequence narrative',
+          explanation: 'The style favors forward momentum where choices trigger visible costs, cascading pressure, and public exposure.'
+        };
+      };
+
       const expandSettingProfile = ({ settingSeed, styleProfile }) => {
         const seed = String(settingSeed || '').trim();
         const seedLower = seed.toLowerCase();
-        const isCoastal = /coast|harbor|port|sea|fjord|mediterranean|island/.test(seedLower);
-        const isNordicOrCold = /nordic|arctic|snow|winter|fjord/.test(seedLower);
-        const isMountain = /mountain|alpine|highland|inland/.test(seedLower);
-        const isIndustrial = /industrial|factory|shipyard|refinery|warehouse/.test(seedLower);
-        const isPostTourist = /tourist|post-tourist|off-season|seasonal/.test(seedLower);
+        const hasWater = /coast|harbor|river|sea|port|island|delta|canal|bay|shore/.test(seedLower);
+        const hasAltitude = /mountain|highland|valley|plateau|ridge|inland/.test(seedLower);
+        const hasUrbanDensity = /city|metro|district|suburb|tower|market/.test(seedLower);
+        const hasIndustry = /industrial|factory|shipyard|warehouse|refinery|mine|plant/.test(seedLower);
+        const hasTransit = /rail|station|highway|border|route|terminal|checkpoint/.test(seedLower);
 
-        const environmentType = isCoastal
-          ? (isIndustrial ? 'industrial littoral settlements tied to working ports' : 'coastal settlements shaped by maritime dependency')
-          : (isMountain ? 'inland mountain settlements linked by constrained routes' : 'small interconnected settlements under resource pressure');
-        const geographicTone = isMountain
-          ? 'vertically fragmented geography where distance feels political'
-          : isCoastal
-            ? 'horizon-open geography with exposed edges and chokepoint harbors'
-            : 'corridor-based geography with contested centers and peripheries';
-        const climateMood = isNordicOrCold
-          ? 'cold-weather austerity, long twilight, and weather as daily antagonist'
-          : isCoastal
-            ? 'salt-heavy winds, abrupt seasonal swings, and public life shaped by storms'
-            : 'dry-to-humid seasonal strain with recurring environmental unease';
-        const socialTexture = isPostTourist
-          ? 'residents balancing seasonal economies, memory fatigue, and ownership anxiety'
-          : 'tight social memory where favors, grudges, and reputation travel faster than law';
-        const institutionalPresence = isIndustrial
-          ? 'labor councils, port authorities, and municipal permitting offices with uneven legitimacy'
-          : 'municipal offices, service guilds, and informal caretaking networks in quiet competition';
-        const publicVsPrivateTension = 'public compliance is performative while private loyalties and secrets drive real decisions';
+        const environmentType = hasUrbanDensity
+          ? 'dense civic environment with overlapping public systems'
+          : hasWater
+            ? 'water-defined settlements dependent on routes and weather'
+            : hasAltitude
+              ? 'terrain-constrained settlements with narrow connective corridors'
+              : 'mixed settlement network balancing center and edge pressures';
+        const geographicTone = hasTransit
+          ? 'movement corridors shape power, access, and secrecy'
+          : hasAltitude
+            ? 'vertical separation increases social and institutional distance'
+            : hasWater
+              ? 'open horizons with exposed thresholds and monitored crossings'
+              : 'patchwork geography where boundaries feel negotiated, not fixed';
+        const climateMood = hasWater
+          ? 'volatile weather rhythms that interrupt routine and expose vulnerability'
+          : hasAltitude
+            ? 'hard seasonal swings that reward preparation and punish delay'
+            : 'unstable seasonal rhythm that quietly amplifies social stress';
+        const socialTexture = hasUrbanDensity
+          ? 'high-contact social fabric where anonymity and surveillance coexist'
+          : 'tight social memory where reputation, favors, and omission carry long tails';
+        const institutionalPresence = hasIndustry || hasUrbanDensity
+          ? 'layered regulators, employers, and municipal offices with contested legitimacy'
+          : 'municipal caretaking bodies and informal authorities in constant negotiation';
+        const publicVsPrivateTension = 'public alignment is often strategic while private loyalties determine irreversible choices';
         const recurringAtmosphericMotifs = [
-          isCoastal ? 'metal railings salted by wind' : 'narrow roads as social bottlenecks',
-          isIndustrial ? 'shift sirens and exhausted machinery' : 'habitual rituals that mask anxiety',
-          styleProfile.narrativePressure.includes('compressed') ? 'countdown-driven decisions under visible consequence' : 'slow-build pressure hidden inside routine'
+          hasTransit ? 'chokepoints, checkpoints, and transit timing windows' : 'repeated routines that conceal strategic intent',
+          hasIndustry ? 'fatigued infrastructure and procedural bottlenecks' : 'small civic rituals under latent strain',
+          styleProfile.narrativePressure.includes('compressed') ? 'deadline-shaped decisions with visible fallout' : 'incremental pressure embedded in ordinary life'
         ];
-        const fitRationale = `This setting profile supports ${styleProfile.actionVsReflection} conflict with ${styleProfile.emotionalTemperature}, giving the novel a pressure field where institutions and intimacy collide.`;
-
-        const targetNovelMode = (() => {
-          if (isCoastal || isIndustrial) {
-            return {
-              label: 'institutional-friction narrative',
-              explanation: 'Setting pressure comes from labor systems, civic authority, and personal compromise under surveillance-like social memory.'
-            };
-          }
-          if (isMountain || isNordicOrCold) {
-            return {
-              label: 'containment-pressure narrative',
-              explanation: 'Distance, weather, and constrained routes turn emotional conflict into strategic survival choices.'
-            };
-          }
-          return {
-            label: 'character-friction narrative',
-            explanation: 'Setting emphasizes psychological contradiction and social pressure over spectacle.'
-          };
-        })();
+        const fitRationale = `The setting amplifies ${styleProfile.actionVsReflection} storytelling with ${styleProfile.emotionalTemperature}, sustaining conflict between institutional demand and private conscience.`;
 
         return {
           settingProfile: {
@@ -438,85 +436,54 @@
             publicVsPrivateTension,
             recurringAtmosphericMotifs,
             fitRationale
-          },
-          targetNovelMode
+          }
         };
       };
 
-      const validateStyleProfile = (styleProfile) => REQUIRED_STYLE_PROFILE_FIELDS.every(field => {
-        return Object.prototype.hasOwnProperty.call(styleProfile, field) && String(styleProfile[field]).trim().length > 0;
-      });
-
-      const REQUIRED_SETTING_PROFILE_FIELDS = [
-        'environmentType',
-        'geographicTone',
-        'climateMood',
-        'socialTexture',
-        'institutionalPresence',
-        'publicVsPrivateTension',
-        'recurringAtmosphericMotifs',
-        'fitRationale'
-      ];
-
-      const validateSettingProfile = (settingProfile) => REQUIRED_SETTING_PROFILE_FIELDS.every((field) => {
-        if (!Object.prototype.hasOwnProperty.call(settingProfile || {}, field)) return false;
-        if (field === 'recurringAtmosphericMotifs') {
-          return Array.isArray(settingProfile.recurringAtmosphericMotifs)
-            && settingProfile.recurringAtmosphericMotifs.length >= 2
-            && settingProfile.recurringAtmosphericMotifs.every(item => String(item).trim().length > 0);
-        }
-        return String(settingProfile[field]).trim().length > 0;
-      });
-
       const createThemeCandidates = ({ styleProfile, settingProfile, targetNovelMode, settingSeed }) => {
-        const place = `${settingSeed.trim()} — ${settingProfile.environmentType}`;
-        const labels = [
+        const location = String(settingSeed || '').trim() || 'the current setting';
+        const motifA = settingProfile.recurringAtmosphericMotifs?.[0] || 'civic routines';
+        const motifB = settingProfile.recurringAtmosphericMotifs?.[1] || 'institutional strain';
+        const tensionAxis = styleProfile.actionVsReflection.includes('reflection') ? 'self-justification versus accountability' : 'expedience versus repair';
+
+        const rawCandidates = [
           {
-            title: 'Mercy as Strategic Risk',
-            rationale: `In ${place}, mercy preserves humanity but weakens immediate leverage, fitting ${targetNovelMode.label}.`
+            title: `Borrowed Safety, Permanent Liability in ${location}`,
+            rationale: `A protective decision that prevents immediate collapse creates a long-term liability chain, testing ${tensionAxis} inside ${targetNovelMode.label}.`
           },
           {
-            title: 'Belonging versus Self-Invention',
-            rationale: `Within ${settingProfile.socialTexture}, characters choose between social acceptance and authentic transformation.`
+            title: `When Procedure Becomes a Mask for Mercy`,
+            rationale: `Characters weaponize compliant behavior to hide ethically risky acts of care, tying ${motifA} to escalating consequence.`
           },
           {
-            title: 'Truth under Institutional Convenience',
-            rationale: `${settingProfile.institutionalPresence} rewards manageable myths, testing moral courage at public scale.`
+            title: `Inheritance of Silence Across Public Roles`,
+            rationale: `People occupying official and private identities inherit a silence pact that preserves order while degrading trust.`
           },
           {
-            title: 'Intimacy under Civic Exposure',
-            rationale: `${settingProfile.publicVsPrivateTension} turns love and loyalty into liabilities that must still be chosen.`
+            title: `Truth with No Innocent Audience`,
+            rationale: `Revelation can restore accuracy but harms every social faction that depends on curated ambiguity around ${motifB}.`
           },
           {
-            title: 'Inheritance versus Repair',
-            rationale: `${settingProfile.geographicTone} and local memory force characters to choose loyalty, justice, or reinvention.`
+            title: `Repair as a Form of Betrayal`,
+            rationale: `Attempting to heal one fractured bond is interpreted as betrayal by another, forcing incompatible versions of justice.`
           },
           {
-            title: 'Power that Requires Self-Betrayal',
-            rationale: `Advancement in this setting demands identity compromise, amplifying ${styleProfile.actionVsReflection} pressure.`
+            title: `Moral Credit Markets in Everyday Decisions`,
+            rationale: `Small favors become exchangeable moral currency until compassion itself is priced and strategically withheld.`
           },
           {
-            title: 'Hope as Disciplined Defiance',
-            rationale: `${settingProfile.climateMood} makes hope an intentional practice against institutional and emotional fatalism.`
+            title: `The Cost of Being Correct Too Late`,
+            rationale: `A character secures factual truth after the social window for responsible action closes, creating irreversible collateral damage.`
           }
         ];
 
-        return labels.map((entry, index) => ({
-          ...entry,
-          draftId: index + 1,
+        return rawCandidates.map(candidate => ({
+          ...candidate,
           originalityScore: 0,
           compatibilityScore: 0,
           repetitionRisk: 0,
           totalScore: 0
         }));
-      };
-
-      const jaccardSimilarity = (a, b) => {
-        const setA = new Set(tokenize(a));
-        const setB = new Set(tokenize(b));
-        const intersection = [...setA].filter(x => setB.has(x)).length;
-        const union = new Set([...setA, ...setB]).size || 1;
-        return intersection / union;
       };
 
       const applyThemeQualityScoring = ({ candidates, styleProfile, settingProfile, settingSeed }) => {
@@ -564,7 +531,7 @@
           authorReference: pipeline.authorReference.trim(),
           styleSource: {
             authorName: pipeline.authorReference.trim(),
-            sampleParagraphs: pipeline.sampleParagraphs.map(p => p.trim()),
+            sampleText: pipeline.styleSampleText.trim(),
             settingSeed: pipeline.settingSeed.trim()
           },
           styleProfile,
@@ -589,7 +556,7 @@
         if (!String(nkgBlock.authorReference || '').trim()) throw new Error('authorReference must be non-empty.');
         if (!String(nkgBlock.styleSource?.authorName || '').trim()) throw new Error('styleSource.authorName must be non-empty.');
         if (!String(nkgBlock.styleSource?.settingSeed || '').trim()) throw new Error('styleSource.settingSeed must be non-empty.');
-        if (!Array.isArray(nkgBlock.styleSource?.sampleParagraphs) || nkgBlock.styleSource.sampleParagraphs.length !== 3) throw new Error('styleSource.sampleParagraphs must have exactly 3 entries.');
+        if (!String(nkgBlock.styleSource?.sampleText || '').trim()) throw new Error('styleSource.sampleText must be non-empty.');
         if (!validateStyleProfile(nkgBlock.styleProfile)) throw new Error('styleProfile is missing required fields.');
         if (!validateSettingProfile(nkgBlock.settingProfile)) throw new Error('settingProfile is missing required fields.');
         if (!String(nkgBlock.targetNovelMode?.label || '').trim()) throw new Error('targetNovelMode.label must be non-empty.');
@@ -625,8 +592,11 @@
             const inputErrors = inputValidationErrors();
             if (inputErrors.length > 0) throw new Error(inputErrors.join(' '));
             const styleProfile = computeStyleProfile();
+            const targetNovelMode = inferTargetNovelMode({ styleProfile, styleSampleText: pipeline.styleSampleText });
             if (!validateStyleProfile(styleProfile)) throw new Error('Pass 1 generated incomplete styleProfile.');
+            if (!String(targetNovelMode?.label || '').trim() || !String(targetNovelMode?.explanation || '').trim()) throw new Error('Pass 1 generated incomplete targetNovelMode.');
             pipeline.pass1.styleProfile = styleProfile;
+            pipeline.pass1.targetNovelMode = targetNovelMode;
             passState.status = 'ok';
             passState.errorCode = null;
             passState.errorMessage = null;
@@ -649,16 +619,15 @@
           noteRequestId(passState.requestId);
           passDiagnostics.pass2 = structuredClone(passState);
           try {
-            if (pipeline.pass1.state.status !== 'ok' || !pipeline.pass1.styleProfile) {
-              throw new Error('Pass 2 requires successful Pass 1 styleProfile output.');
+            if (pipeline.pass1.state.status !== 'ok' || !pipeline.pass1.styleProfile || !pipeline.pass1.targetNovelMode) {
+              throw new Error('Pass 2 requires successful Pass 1 styleProfile + targetNovelMode outputs.');
             }
-            const { settingProfile, targetNovelMode } = expandSettingProfile({
+            const { settingProfile } = expandSettingProfile({
               settingSeed: pipeline.settingSeed,
               styleProfile: pipeline.pass1.styleProfile
             });
             if (!validateSettingProfile(settingProfile)) throw new Error('Pass 2 generated incomplete settingProfile.');
             pipeline.pass2.settingProfile = settingProfile;
-            pipeline.pass2.targetNovelMode = targetNovelMode;
             passState.status = 'ok';
             passState.errorCode = null;
             passState.errorMessage = null;
@@ -684,13 +653,13 @@
           noteRequestId(passState.requestId);
           passDiagnostics.pass3 = structuredClone(passState);
           try {
-            if (pipeline.pass2.state.status !== 'ok' || !pipeline.pass2.settingProfile || !pipeline.pass2.targetNovelMode) {
-              throw new Error('Pass 3 requires successful Pass 2 settingProfile + targetNovelMode outputs.');
+            if (pipeline.pass2.state.status !== 'ok' || !pipeline.pass2.settingProfile || !pipeline.pass1.targetNovelMode) {
+              throw new Error('Pass 3 requires successful Pass 2 settingProfile and Pass 1 targetNovelMode outputs.');
             }
             const candidates = createThemeCandidates({
               styleProfile: pipeline.pass1.styleProfile,
               settingProfile: pipeline.pass2.settingProfile,
-              targetNovelMode: pipeline.pass2.targetNovelMode,
+              targetNovelMode: pipeline.pass1.targetNovelMode,
               settingSeed: pipeline.settingSeed
             });
             const { sorted, similarityWarnings } = applyThemeQualityScoring({
@@ -734,7 +703,7 @@
             if (!Array.isArray(pipeline.pass3.candidateThemes) || pipeline.pass3.candidateThemes.length < 5) {
               throw new Error('Pass 4 requires at least 5 candidate themes.');
             }
-            const selectedTheme = pipeline.pass3.candidateThemes[pipeline.selectedThemeIndex] || pipeline.pass3.candidateThemes[0];
+            const selectedTheme = [...pipeline.pass3.candidateThemes].sort((a, b) => (b.totalScore || 0) - (a.totalScore || 0))[0];
             pipeline.pass4.selectedThemeTitle = selectedTheme.title;
             pipeline.pass4.selectedThemeRationale = selectedTheme.rationale;
             if (selectedTheme.originalityScore < 5) {
@@ -744,7 +713,7 @@
             const nkgBlock = buildOfficialNkgBlock({
               styleProfile: pipeline.pass1.styleProfile,
               settingProfile: pipeline.pass2.settingProfile,
-              targetNovelMode: pipeline.pass2.targetNovelMode,
+              targetNovelMode: pipeline.pass1.targetNovelMode,
               candidates: pipeline.pass3.candidateThemes,
               selectedThemeTitle: pipeline.pass4.selectedThemeTitle,
               selectedThemeRationale: pipeline.pass4.selectedThemeRationale
@@ -1080,6 +1049,14 @@
         return `${scalarRows}<li><strong>recurringAtmosphericMotifs</strong><ul>${motifs}</ul></li>`;
       };
 
+
+      const summarizeSampleText = (sampleText) => {
+        const text = String(sampleText || '').trim();
+        if (!text) return 'No sample text provided.';
+        const tokens = text.split(/\s+/).filter(Boolean);
+        return `${tokens.length} words provided. Preview: ${text.slice(0, 180)}${text.length > 180 ? '…' : ''}`;
+      };
+
       const renderNkgProjectDocument = (state) => {
         const nkg = state.outputs.nkg;
         if (!nkg) {
@@ -1092,6 +1069,7 @@
 
         nodes.nkgProjectDocRoot.innerHTML = `
           <p><strong>Author reference:</strong> ${escapeHtml(nkg.authorReference || '-')}</p>
+          <p><strong>Style sample summary:</strong> ${escapeHtml(summarizeSampleText(nkg.styleSource?.sampleText || ''))}</p>
           <p><strong>Setting seed:</strong> ${escapeHtml(nkg.styleSource?.settingSeed || '-')}</p>
           <h3>Style profile</h3>
           <ul>${renderStyleProfileList(nkg.styleProfile)}</ul>
@@ -1168,15 +1146,13 @@
             <input id="authorReference" data-role="theme-input" data-field="authorReference" value="${escapeHtml(pipeline.authorReference)}" placeholder="e.g. Ursula K. Le Guin" />
           </div>
           <div class="field">
-            <label for="settingSeed">Setting seed (short phrase)</label>
-            <input id="settingSeed" data-role="theme-input" data-field="settingSeed" value="${escapeHtml(pipeline.settingSeed)}" placeholder="e.g. Nordic towns / industrial coast / inland mountain villages" />
+            <label for="styleSampleText">Style sample text</label>
+            <textarea id="styleSampleText" data-role="theme-input" data-field="styleSampleText" placeholder="Paste one representative style sample text">${escapeHtml(pipeline.styleSampleText)}</textarea>
           </div>
-          ${pipeline.sampleParagraphs.map((value, index) => `
-            <div class="field">
-              <label for="sampleParagraph_${index}">Sample paragraph ${index + 1}</label>
-              <textarea id="sampleParagraph_${index}" data-role="theme-input" data-field="sampleParagraph" data-paragraph-index="${index}" placeholder="Sample paragraph ${index + 1}">${escapeHtml(value)}</textarea>
-            </div>
-          `).join('')}
+          <div class="field">
+            <label for="settingSeed">Setting seed (short phrase)</label>
+            <input id="settingSeed" data-role="theme-input" data-field="settingSeed" value="${escapeHtml(pipeline.settingSeed)}" placeholder="e.g. dense coastal trade city under weather stress" />
+          </div>
           <div class="actions" style="margin-top:.75rem;">
             <button data-role="run-nkg-stage">Generate NKG projecte 1</button>
           </div>
@@ -1190,12 +1166,12 @@
           <h3>Pass 1 — Style analysis</h3>
           <button data-role="run-theme-pass" data-pass-id="pass1">Run Pass 1</button>
           <div class="muted">status: ${pipeline.pass1.state.status} | lastRunAt: ${pipeline.pass1.state.lastRunAt || '-'} | requestId: ${pipeline.pass1.state.requestId || '-'} | temperature: ${pipeline.pass1.state.temperature ?? '-'}</div>
-          <pre>${escapeHtml(JSON.stringify({ styleProfile: pipeline.pass1.styleProfile, error: pipeline.pass1.state.errorMessage }, null, 2))}</pre>
+          <pre>${escapeHtml(JSON.stringify({ styleProfile: pipeline.pass1.styleProfile, targetNovelMode: pipeline.pass1.targetNovelMode, error: pipeline.pass1.state.errorMessage }, null, 2))}</pre>
 
           <h3>Pass 2 — Setting expansion</h3>
           <button data-role="run-theme-pass" data-pass-id="pass2">Run Pass 2</button>
           <div class="muted">status: ${pipeline.pass2.state.status} | lastRunAt: ${pipeline.pass2.state.lastRunAt || '-'} | requestId: ${pipeline.pass2.state.requestId || '-'} | temperature: ${pipeline.pass2.state.temperature ?? '-'}</div>
-          <pre>${escapeHtml(JSON.stringify({ settingProfile: pipeline.pass2.settingProfile, targetNovelMode: pipeline.pass2.targetNovelMode, error: pipeline.pass2.state.errorMessage }, null, 2))}</pre>
+          <pre>${escapeHtml(JSON.stringify({ settingProfile: pipeline.pass2.settingProfile, targetNovelMode: pipeline.pass1.targetNovelMode, error: pipeline.pass2.state.errorMessage }, null, 2))}</pre>
 
           <h3>Pass 3 — Theme ideation</h3>
           <button data-role="run-theme-pass" data-pass-id="pass3">Run Pass 3</button>
@@ -1203,12 +1179,6 @@
           <pre>${escapeHtml(JSON.stringify({ candidateThemes: pipeline.pass3.candidateThemes, error: pipeline.pass3.state.errorMessage }, null, 2))}</pre>
 
           <h3>Pass 4 — Theme selection and normalization</h3>
-          <div class="field">
-            <label for="selectedThemeIndex">Selected theme index</label>
-            <select id="selectedThemeIndex" data-role="theme-input" data-field="selectedThemeIndex">
-              ${pipeline.pass3.candidateThemes.map((theme, index) => `<option value="${index}" ${pipeline.selectedThemeIndex === index ? 'selected' : ''}>${index}: ${escapeHtml(theme.title)}</option>`).join('') || '<option value="0">0: (run Pass 3 first)</option>'}
-            </select>
-          </div>
           <button data-role="run-theme-pass" data-pass-id="pass4">Run Pass 4</button>
           <div class="muted">status: ${pipeline.pass4.state.status} | lastRunAt: ${pipeline.pass4.state.lastRunAt || '-'} | requestId: ${pipeline.pass4.state.requestId || '-'} | temperature: ${pipeline.pass4.state.temperature ?? '-'}</div>
           <pre>${escapeHtml(JSON.stringify({ selectedThemeTitle: pipeline.pass4.selectedThemeTitle, selectedThemeRationale: pipeline.pass4.selectedThemeRationale, officialNkgOutput: state.outputs.nkg, error: pipeline.pass4.state.errorMessage, warnings: state.diagnostics.nkgStyleTheme.warnings }, null, 2))}</pre>
@@ -1272,9 +1242,8 @@
           const value = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement
             ? target.value
             : '';
-          const paragraphIndex = target.dataset.paragraphIndex ? Number(target.dataset.paragraphIndex) : undefined;
           try {
-            AppCore.dispatch({ type: 'THEME_PIPELINE_UPDATE_INPUT', field, value, paragraphIndex });
+            AppCore.dispatch({ type: 'THEME_PIPELINE_UPDATE_INPUT', field, value });
             render();
           } catch (err) {
             console.error('Theme pipeline input update failed', err);

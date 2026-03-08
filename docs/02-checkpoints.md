@@ -14,8 +14,8 @@ Use this sequence for the first real `nkgStyleTheme` slice:
 ### cp_11_nkg_input_ready
 True only when all required first-slice inputs are non-empty:
 - one reference author name
-- exactly 3 non-empty sample paragraphs
-- one non-empty desired setting/location
+- one non-empty style sample text
+- one non-empty setting/location seed
 
 ### cp_12_style_profile_generated
 True only when Pass 1 succeeds and generates:
@@ -23,22 +23,25 @@ True only when Pass 1 succeeds and generates:
 - non-empty `targetNovelMode.label`
 - non-empty `targetNovelMode.explanation`
 
-### cp_13_theme_candidates_generated
+### cp_13_setting_profile_generated
 True only when Pass 2 succeeds and generates:
+- complete `settingProfile` with all required fields
+
+### cp_14_theme_candidates_generated
+True only when Pass 3 succeeds and generates:
 - at least 5 candidate themes
 - scored candidates with `originalityScore`, `compatibilityScore`, and `repetitionRisk`
 
-### cp_14_central_theme_selected
-True only when Pass 3 succeeds and sets:
+### cp_15_central_theme_selected_and_nkg_written
+True only when Pass 4 succeeds and sets:
 - non-empty `selectedThemeTitle`
 - non-empty `selectedThemeRationale`
-
-### cp_15_first_nkg_block_written
-True only when the official first NKG block is written to `AppState.outputs.nkg` and passes output validation.
+- successful official write to `AppState.outputs.nkg` passing output validation
 
 ## Failure visibility requirements
 Failures must identify where they occurred:
 - style analysis pass
+- setting expansion pass
 - theme ideation pass
 - theme selection/normalization pass
 - final official NKG write
