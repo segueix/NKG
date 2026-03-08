@@ -52,3 +52,9 @@ Build and maintain NKG as a single-file narrative project generator that support
 - Use clear naming and comments for architecture boundaries.
 - Document any behavior changes in `docs/`.
 - If a feature is not implemented by scope, expose it as a placeholder and mark clearly as not implemented.
+
+## Prompt governance
+- `AGENTS.md` is reserved for stable, long-lived repository instructions.
+- Reusable task prompts must live in `docs/task-templates/`.
+- The active working prompt may be copied/adapted in `docs/current-task.md`.
+- Temporary task prompts should not be permanently embedded in `AGENTS.md`.

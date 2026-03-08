@@ -33,3 +33,8 @@ This repository currently implements **Phase 1 only**.
 - `schemas/` — JSON schemas for phase-1 app state and checkpoint payloads.
 - `fixtures/` — sample phase-1 project seed.
 - `tests/` — manual smoke checklist for phase-1 shell verification.
+
+## Prompt operations for Codex
+- Stable repository rules live in `AGENTS.md`.
+- Reusable task prompts live in `docs/task-templates/`.
+- `docs/current-task.md` is the temporary per-task working prompt file and is expected to be overwritten between tasks.
