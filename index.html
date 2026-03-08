@@ -21,6 +21,11 @@
     pre { white-space: pre-wrap; word-break: break-word; margin: 0; max-height: 300px; overflow: auto; }
     .ok { color: #22c55e; }
     .bad { color: #f87171; }
+    .primary-doc { border-color: #0ea5e9; background: #0b2537; }
+    .doc-output { border: 1px solid #334155; border-radius: 8px; padding: .9rem; background: #0f172a; }
+    .doc-output h3 { margin-top: 1rem; }
+    .doc-output ul, .doc-output ol { margin: .35rem 0 .75rem 1.15rem; padding: 0; }
+    details.panel summary { cursor: pointer; font-weight: 600; }
   </style>
 </head>
 <body>
@@ -50,10 +55,21 @@
     </div>
 
     <section class="panel" style="margin-top: 1rem;">
-      <h2>nkgStyleTheme Stage — 3-Pass Pipeline (diagnosable)</h2>
-      <p class="muted">Pass 1: style analysis → Pass 2: theme ideation → Pass 3: theme selection + normalization → official write to <code>AppState.outputs.nkg</code>.</p>
+      <h2>Main generation flow</h2>
+      <p class="muted">User path: author reference + 3 samples + short setting seed → run generation once → auto-populated <strong>NKG projecte 1</strong>.</p>
       <div id="themePipelineRoot"></div>
     </section>
+
+    <section class="panel primary-doc" style="margin-top: 1rem;">
+      <h2>NKG projecte 1</h2>
+      <p class="muted">Main generated project document. Automatically populated from successful Phase 2 style/theme output.</p>
+      <div id="nkgProjectDocRoot" class="doc-output"></div>
+    </section>
+
+    <details class="panel" style="margin-top: 1rem;">
+      <summary>Advanced pipeline diagnostics (optional)</summary>
+      <div id="themePipelineDebugRoot" style="margin-top: .75rem;"></div>
+    </details>
 
     <section class="panel" style="margin-top: 1rem;">
       <h2>AppState Snapshot</h2>
@@ -81,6 +97,7 @@
     const NKG_STYLE_THEME_CONFIG = {
       temperatures: {
         styleAnalysis: 0.2,
+        settingExpansion: 0.55,
         themeIdeation: 0.9,
         themeSelection: 0.35
       }
@@ -106,10 +123,12 @@
       'cp_05_phase1_shell_stable',
       'cp_11_nkg_input_ready',
       'cp_12_style_profile_generated',
-      'cp_13_theme_candidates_generated',
-      'cp_14_central_theme_selected',
-      'cp_15_first_nkg_block_written'
+      'cp_13_setting_profile_generated',
+      'cp_14_theme_candidates_generated',
+      'cp_15_central_theme_selected_and_nkg_written'
     ];
+
+    const NKG_PROJECT_DOC_STORAGE_KEY = 'nkg.projecte1.visibleDocument.v1';
 
     // ===== Business/state logic =====
     const AppCore = (() => {
@@ -142,6 +161,7 @@
         pass1: createPassState(),
         pass2: createPassState(),
         pass3: createPassState(),
+        pass4: createPassState(),
         requestIds: [],
         warnings: [],
         lastError: null
@@ -164,18 +184,22 @@
             config: structuredClone(NKG_STYLE_THEME_CONFIG),
             authorReference: '',
             sampleParagraphs: ['', '', ''],
-            desiredSetting: '',
+            settingSeed: '',
             selectedThemeIndex: 0,
             pass1: {
               state: createPassState(),
-              styleProfile: null,
-              targetNovelMode: null
+              styleProfile: null
             },
             pass2: {
               state: createPassState(),
-              candidateThemes: []
+              settingProfile: null,
+              targetNovelMode: null
             },
             pass3: {
+              state: createPassState(),
+              candidateThemes: []
+            },
+            pass4: {
               state: createPassState(),
               selectedThemeTitle: '',
               selectedThemeRationale: ''
@@ -246,14 +270,31 @@
         state.diagnostics.nkgStyleTheme.requestIds = state.diagnostics.nkgStyleTheme.requestIds.slice(0, 20);
       };
 
-      const resetPipelineOutputs = () => {
+      const persistVisibleNkgDocument = (nkgBlock) => {
+        try {
+          if (nkgBlock === null) {
+            localStorage.removeItem(NKG_PROJECT_DOC_STORAGE_KEY);
+            return;
+          }
+          localStorage.setItem(NKG_PROJECT_DOC_STORAGE_KEY, JSON.stringify(nkgBlock));
+        } catch (err) {
+          addWarning(`Could not persist visible NKG document: ${err instanceof Error ? err.message : String(err)}`);
+          writeTrace('storage.warning', 'Failed to persist visible NKG document', { error: err instanceof Error ? err.message : String(err) });
+        }
+      };
+
+      const resetPipelineOutputs = ({ clearNkgOutput = false } = {}) => {
         const pipeline = state.project.themePipeline;
         pipeline.pass1.styleProfile = null;
-        pipeline.pass1.targetNovelMode = null;
-        pipeline.pass2.candidateThemes = [];
-        pipeline.pass3.selectedThemeTitle = '';
-        pipeline.pass3.selectedThemeRationale = '';
-        state.outputs.nkg = null;
+        pipeline.pass2.settingProfile = null;
+        pipeline.pass2.targetNovelMode = null;
+        pipeline.pass3.candidateThemes = [];
+        pipeline.pass4.selectedThemeTitle = '';
+        pipeline.pass4.selectedThemeRationale = '';
+        if (clearNkgOutput) {
+          state.outputs.nkg = null;
+          persistVisibleNkgDocument(null);
+        }
       };
 
       const updateProjectText = (stageId, text) => {
@@ -268,7 +309,7 @@
       const updateThemePipelineInput = ({ field, value, paragraphIndex }) => {
         const pipeline = state.project.themePipeline;
         if (field === 'authorReference') pipeline.authorReference = String(value ?? '');
-        else if (field === 'desiredSetting') pipeline.desiredSetting = String(value ?? '');
+        else if (field === 'settingSeed') pipeline.settingSeed = String(value ?? '');
         else if (field === 'sampleParagraph') {
           if (!Number.isInteger(paragraphIndex) || paragraphIndex < 0 || paragraphIndex > 2) {
             throw new Error('Invalid paragraph index. Expected 0, 1, or 2.');
@@ -286,7 +327,7 @@
       };
 
       const inputValidationErrors = () => {
-        const { authorReference, sampleParagraphs, desiredSetting } = state.project.themePipeline;
+        const { authorReference, sampleParagraphs, settingSeed } = state.project.themePipeline;
         const errors = [];
         if (!authorReference.trim()) errors.push('Author reference must be non-empty.');
         const missingSamples = sampleParagraphs
@@ -294,7 +335,7 @@
           .filter(x => !String(x.paragraph).trim())
           .map(x => x.index + 1);
         if (missingSamples.length > 0) errors.push(`All 3 sample paragraphs must be non-empty (missing: ${missingSamples.join(', ')}).`);
-        if (!desiredSetting.trim()) errors.push('Setting/location must be non-empty.');
+        if (!settingSeed.trim()) errors.push('Setting seed must be non-empty.');
         return errors;
       };
 
@@ -304,7 +345,7 @@
         return 'high';
       };
 
-      const tokenize = (text) => String(text).toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(Boolean);
+      const tokenize = (text) => String(text).toLowerCase().replace(/[^\p{L}\p{N}\s-]/gu, ' ').split(/\s+/).filter(Boolean);
 
       const computeStyleProfile = () => {
         const pipeline = state.project.themePipeline;
@@ -313,13 +354,13 @@
         const sentenceParts = sampleText.split(/[.!?]+/).map(v => v.trim()).filter(Boolean);
         const avgSentenceLength = sentenceParts.length > 0 ? tokens.length / sentenceParts.length : 0;
         const firstPersonCount = tokens.filter(t => ['i', 'me', 'my', 'mine', 'we', 'our', 'us'].includes(t)).length;
-        const sensoryCount = tokens.filter(t => ['cold', 'warm', 'smell', 'taste', 'light', 'dark', 'sound', 'touch', 'wind', 'dust'].includes(t)).length;
+        const sensoryCount = tokens.filter(t => ['cold', 'warm', 'smell', 'taste', 'light', 'dark', 'sound', 'touch', 'wind', 'dust', 'salt', 'fog'].includes(t)).length;
         const metaphorCount = tokens.filter(t => ['like', 'as', 'as-if', 'mirror', 'echo', 'shadow'].includes(t)).length;
         const reflectiveCount = tokens.filter(t => ['think', 'remember', 'feel', 'wonder', 'doubt', 'regret'].includes(t)).length;
         const actionCount = tokens.filter(t => ['run', 'jump', 'cut', 'fight', 'chase', 'move', 'grab', 'break'].includes(t)).length;
         const pressureCount = tokens.filter(t => ['must', 'urgent', 'deadline', 'now', 'before', 'risk', 'threat'].includes(t)).length;
 
-        const styleProfile = {
+        return {
           rhythm: avgSentenceLength > 20 ? 'slow-breathing and layered' : avgSentenceLength > 12 ? 'balanced cadence with controlled variation' : 'quick, clipped cadence with frequent pivots',
           sentenceLength: avgSentenceLength > 20 ? 'long-leaning sentences' : avgSentenceLength > 12 ? 'mixed sentence lengths' : 'short-leaning sentences',
           focalization: firstPersonCount > tokens.length * 0.03 ? 'intimate interior focalization' : 'external-leaning focalization with selective interior access',
@@ -330,60 +371,133 @@
           narrativePressure: pressureCount > 4 ? 'compressed urgency and consequence' : 'measured escalation with intermittent pressure spikes',
           proseMode: 'abstracted style profile derived from reference + samples; never author imitation'
         };
+      };
+
+      const expandSettingProfile = ({ settingSeed, styleProfile }) => {
+        const seed = String(settingSeed || '').trim();
+        const seedLower = seed.toLowerCase();
+        const isCoastal = /coast|coastal|harbor|harbour|port|sea|seaside|fjord|mediterranean|mediterrani|island|littoral|costa/.test(seedLower);
+        const isNordicOrCold = /nordic|nòrdic|nordic[ao]?|nordiques|nórdic|nordico|nordica|arctic|ártic|snow|neu|hivern|winter|fred|cold|fjord/.test(seedLower);
+        const isMountain = /mountain|muntanya|alpine|alpí|highland|inland|interior|village|villages|poble|pobles/.test(seedLower);
+        const isIndustrial = /industrial|industry|fàbrica|fabrica|factory|shipyard|drassana|refinery|warehouse|pol[ií]gon/.test(seedLower);
+        const isPostTourist = /tourist|tur[ií]stic|post-tourist|posttur[íi]stic|off-season|seasonal|temporada/.test(seedLower);
+
+        const environmentType = isCoastal
+          ? (isIndustrial ? 'industrial littoral settlements tied to working ports' : 'coastal settlements shaped by maritime dependency')
+          : (isMountain ? 'inland mountain settlements linked by constrained routes' : 'small interconnected settlements under resource pressure');
+        const geographicTone = isMountain
+          ? 'vertically fragmented geography where distance feels political'
+          : isCoastal
+            ? 'horizon-open geography with exposed edges and chokepoint harbors'
+            : 'corridor-based geography with contested centers and peripheries';
+        const climateMood = isNordicOrCold
+          ? 'cold-weather austerity, long twilight, and weather as daily antagonist'
+          : isCoastal
+            ? 'salt-heavy winds, abrupt seasonal swings, and public life shaped by storms'
+            : 'dry-to-humid seasonal strain with recurring environmental unease';
+        const socialTexture = isPostTourist
+          ? 'residents balancing seasonal economies, memory fatigue, and ownership anxiety'
+          : 'tight social memory where favors, grudges, and reputation travel faster than law';
+        const institutionalPresence = isIndustrial
+          ? 'labor councils, port authorities, and municipal permitting offices with uneven legitimacy'
+          : 'municipal offices, service guilds, and informal caretaking networks in quiet competition';
+        const publicVsPrivateTension = 'public compliance is performative while private loyalties and secrets drive real decisions';
+        const recurringAtmosphericMotifs = [
+          isCoastal ? 'metal railings salted by wind' : 'narrow roads as social bottlenecks',
+          isIndustrial ? 'shift sirens and exhausted machinery' : 'habitual rituals that mask anxiety',
+          styleProfile.narrativePressure.includes('compressed') ? 'countdown-driven decisions under visible consequence' : 'slow-build pressure hidden inside routine'
+        ];
+        const fitRationale = `This setting profile supports ${styleProfile.actionVsReflection} conflict with ${styleProfile.emotionalTemperature}, giving the novel a pressure field where institutions and intimacy collide.`;
 
         const targetNovelMode = (() => {
-          const settingText = pipeline.desiredSetting.toLowerCase();
-          if (settingText.includes('space') || settingText.includes('orbital') || settingText.includes('future')) {
+          if (isCoastal || isIndustrial) {
             return {
-              label: 'speculative pressure narrative',
-              explanation: 'Setting implies systems-level pressure, institutional constraints, and adaptive identity conflict.'
+              label: 'institutional-friction narrative',
+              explanation: 'Setting pressure comes from labor systems, civic authority, and personal compromise under surveillance-like social memory.'
             };
           }
-          if (settingText.includes('kingdom') || settingText.includes('myth') || settingText.includes('ancient')) {
+          if (isMountain || isNordicOrCold) {
             return {
-              label: 'mythic-ethical narrative',
-              explanation: 'Setting favors moral consequence arcs where personal desire collides with inherited order.'
+              label: 'containment-pressure narrative',
+              explanation: 'Distance, weather, and constrained routes turn emotional conflict into strategic survival choices.'
             };
           }
           return {
             label: 'character-friction narrative',
-            explanation: 'Setting favors psychological contradiction and social pressure over spectacle.'
+            explanation: 'Setting emphasizes psychological contradiction and social pressure over spectacle.'
           };
         })();
 
-        return { styleProfile, targetNovelMode };
+        return {
+          settingProfile: {
+            environmentType,
+            geographicTone,
+            climateMood,
+            socialTexture,
+            institutionalPresence,
+            publicVsPrivateTension,
+            recurringAtmosphericMotifs,
+            fitRationale
+          },
+          targetNovelMode
+        };
       };
 
-      const createThemeCandidates = (styleProfile, targetNovelMode, setting) => {
-        const settingText = setting.trim();
+      const validateStyleProfile = (styleProfile) => REQUIRED_STYLE_PROFILE_FIELDS.every(field => {
+        return Object.prototype.hasOwnProperty.call(styleProfile, field) && String(styleProfile[field]).trim().length > 0;
+      });
+
+      const REQUIRED_SETTING_PROFILE_FIELDS = [
+        'environmentType',
+        'geographicTone',
+        'climateMood',
+        'socialTexture',
+        'institutionalPresence',
+        'publicVsPrivateTension',
+        'recurringAtmosphericMotifs',
+        'fitRationale'
+      ];
+
+      const validateSettingProfile = (settingProfile) => REQUIRED_SETTING_PROFILE_FIELDS.every((field) => {
+        if (!Object.prototype.hasOwnProperty.call(settingProfile || {}, field)) return false;
+        if (field === 'recurringAtmosphericMotifs') {
+          return Array.isArray(settingProfile.recurringAtmosphericMotifs)
+            && settingProfile.recurringAtmosphericMotifs.length >= 2
+            && settingProfile.recurringAtmosphericMotifs.every(item => String(item).trim().length > 0);
+        }
+        return String(settingProfile[field]).trim().length > 0;
+      });
+
+      const createThemeCandidates = ({ styleProfile, settingProfile, targetNovelMode, settingSeed }) => {
+        const place = `${settingSeed.trim()} — ${settingProfile.environmentType}`;
         const labels = [
           {
             title: 'Mercy as Strategic Risk',
-            rationale: `In ${settingText}, mercy can preserve humanity while undermining immediate advantage, fitting ${targetNovelMode.label}.`
+            rationale: `In ${place}, mercy preserves humanity but weakens immediate leverage, fitting ${targetNovelMode.label}.`
           },
           {
             title: 'Belonging versus Self-Invention',
-            rationale: `Characters in ${settingText} are forced to choose between social acceptance and authentic transformation.`
+            rationale: `Within ${settingProfile.socialTexture}, characters choose between social acceptance and authentic transformation.`
           },
           {
             title: 'Truth under Institutional Convenience',
-            rationale: `The social pressures of ${settingText} reward convenient myths, testing moral courage.`
+            rationale: `${settingProfile.institutionalPresence} rewards manageable myths, testing moral courage at public scale.`
           },
           {
-            title: 'Intimacy under Surveillance',
-            rationale: `When privacy erodes in ${settingText}, relationships must renegotiate trust and vulnerability.`
+            title: 'Intimacy under Civic Exposure',
+            rationale: `${settingProfile.publicVsPrivateTension} turns love and loyalty into liabilities that must still be chosen.`
           },
           {
             title: 'Inheritance versus Repair',
-            rationale: `Past harm shapes present duties in ${settingText}, creating tension between loyalty and justice.`
+            rationale: `${settingProfile.geographicTone} and local memory force characters to choose loyalty, justice, or reinvention.`
           },
           {
             title: 'Power that Requires Self-Betrayal',
-            rationale: `Ambition in ${settingText} may demand identity compromise, amplifying ${styleProfile.actionVsReflection}.`
+            rationale: `Advancement in this setting demands identity compromise, amplifying ${styleProfile.actionVsReflection} pressure.`
           },
           {
             title: 'Hope as Disciplined Defiance',
-            rationale: `Hope becomes a practiced ethic against fatalism in ${settingText}.`
+            rationale: `${settingProfile.climateMood} makes hope an intentional practice against institutional and emotional fatalism.`
           }
         ];
 
@@ -405,9 +519,9 @@
         return intersection / union;
       };
 
-      const applyThemeQualityScoring = (candidates, styleProfile, setting) => {
+      const applyThemeQualityScoring = ({ candidates, styleProfile, settingProfile, settingSeed }) => {
         const clicheTokens = ['destiny', 'good versus evil', 'chosen one', 'power of friendship', 'love conquers all'];
-        const settingTokens = new Set(tokenize(setting));
+        const settingTokens = new Set(tokenize(`${settingSeed} ${settingProfile.environmentType} ${settingProfile.socialTexture} ${settingProfile.institutionalPresence} ${settingProfile.publicVsPrivateTension}`));
         const styleHints = new Set(tokenize(`${styleProfile.narrativePressure} ${styleProfile.actionVsReflection} ${styleProfile.emotionalTemperature}`));
 
         candidates.forEach((candidate, index) => {
@@ -415,10 +529,10 @@
           const tokenSet = new Set(tokenize(text));
           const clicheHits = clicheTokens.filter(token => text.includes(token)).length;
           const specificity = Math.min(4, [...tokenSet].filter(token => token.length > 7).length / 2);
-          const moralTension = /versus|risk|cost|betrayal|justice|truth|mercy/.test(text) ? 2.5 : 1;
-          const contradiction = /yet|while|against|despite|betrayal|repair/.test(text) ? 2 : 0.8;
-          const styleCompat = [...styleHints].filter(token => text.includes(token)).length > 0 ? 2.2 : 1.5;
-          const settingCompat = [...settingTokens].filter(token => tokenSet.has(token)).length > 0 ? 2.2 : 1.3;
+          const moralTension = /versus|risk|cost|betrayal|justice|truth|mercy/.test(text) ? 2.8 : 1;
+          const contradiction = /yet|while|against|despite|betrayal|repair|liability/.test(text) ? 2.4 : 0.8;
+          const styleCompat = [...styleHints].filter(token => text.includes(token)).length > 0 ? 2.3 : 1.2;
+          const settingCompat = [...settingTokens].filter(token => tokenSet.has(token)).length > 0 ? 2.6 : 1.0;
           const repetitionRisk = Math.round(candidates.reduce((sum, other, otherIndex) => {
             if (otherIndex === index) return sum;
             return sum + jaccardSimilarity(candidate.title, other.title);
@@ -444,20 +558,17 @@
         return { sorted, similarityWarnings };
       };
 
-      const validateStyleProfile = (styleProfile) => REQUIRED_STYLE_PROFILE_FIELDS.every(field => {
-        return Object.prototype.hasOwnProperty.call(styleProfile, field) && String(styleProfile[field]).trim().length > 0;
-      });
-
-      const buildOfficialNkgBlock = ({ styleProfile, targetNovelMode, candidates, selectedThemeTitle, selectedThemeRationale }) => {
+      const buildOfficialNkgBlock = ({ styleProfile, settingProfile, targetNovelMode, candidates, selectedThemeTitle, selectedThemeRationale }) => {
         const pipeline = state.project.themePipeline;
         return {
           authorReference: pipeline.authorReference.trim(),
           styleSource: {
             authorName: pipeline.authorReference.trim(),
             sampleParagraphs: pipeline.sampleParagraphs.map(p => p.trim()),
-            settingIntent: pipeline.desiredSetting.trim()
+            settingSeed: pipeline.settingSeed.trim()
           },
           styleProfile,
+          settingProfile,
           targetNovelMode,
           themeExploration: {
             candidates: candidates.map(candidate => ({
@@ -475,7 +586,14 @@
 
       const validateFinalNkgBlock = (nkgBlock) => {
         if (!nkgBlock || typeof nkgBlock !== 'object') throw new Error('Final NKG write must be a non-null object.');
+        if (!String(nkgBlock.authorReference || '').trim()) throw new Error('authorReference must be non-empty.');
+        if (!String(nkgBlock.styleSource?.authorName || '').trim()) throw new Error('styleSource.authorName must be non-empty.');
+        if (!String(nkgBlock.styleSource?.settingSeed || '').trim()) throw new Error('styleSource.settingSeed must be non-empty.');
+        if (!Array.isArray(nkgBlock.styleSource?.sampleParagraphs) || nkgBlock.styleSource.sampleParagraphs.length !== 3) throw new Error('styleSource.sampleParagraphs must have exactly 3 entries.');
         if (!validateStyleProfile(nkgBlock.styleProfile)) throw new Error('styleProfile is missing required fields.');
+        if (!validateSettingProfile(nkgBlock.settingProfile)) throw new Error('settingProfile is missing required fields.');
+        if (!String(nkgBlock.targetNovelMode?.label || '').trim()) throw new Error('targetNovelMode.label must be non-empty.');
+        if (!String(nkgBlock.targetNovelMode?.explanation || '').trim()) throw new Error('targetNovelMode.explanation must be non-empty.');
         if (!Array.isArray(nkgBlock.themeExploration?.candidates) || nkgBlock.themeExploration.candidates.length < 5) {
           throw new Error('At least 5 candidate themes are required in final NKG write.');
         }
@@ -506,10 +624,9 @@
           try {
             const inputErrors = inputValidationErrors();
             if (inputErrors.length > 0) throw new Error(inputErrors.join(' '));
-            const { styleProfile, targetNovelMode } = computeStyleProfile();
+            const styleProfile = computeStyleProfile();
             if (!validateStyleProfile(styleProfile)) throw new Error('Pass 1 generated incomplete styleProfile.');
             pipeline.pass1.styleProfile = styleProfile;
-            pipeline.pass1.targetNovelMode = targetNovelMode;
             passState.status = 'ok';
             passState.errorCode = null;
             passState.errorMessage = null;
@@ -528,33 +645,32 @@
           const passState = pipeline.pass2.state;
           passState.status = 'running';
           passState.requestId = mkRequestId('nkg_pass2');
-          passState.temperature = pipeline.config.temperatures.themeIdeation;
+          passState.temperature = pipeline.config.temperatures.settingExpansion;
           noteRequestId(passState.requestId);
           passDiagnostics.pass2 = structuredClone(passState);
           try {
-            if (pipeline.pass1.state.status !== 'ok' || !pipeline.pass1.styleProfile || !pipeline.pass1.targetNovelMode) {
-              throw new Error('Pass 2 requires successful Pass 1 outputs.');
+            if (pipeline.pass1.state.status !== 'ok' || !pipeline.pass1.styleProfile) {
+              throw new Error('Pass 2 requires successful Pass 1 styleProfile output.');
             }
-            const candidates = createThemeCandidates(pipeline.pass1.styleProfile, pipeline.pass1.targetNovelMode, pipeline.desiredSetting);
-            const { sorted, similarityWarnings } = applyThemeQualityScoring(candidates, pipeline.pass1.styleProfile, pipeline.desiredSetting);
-            pipeline.pass2.candidateThemes = sorted.slice(0, Math.max(5, sorted.length));
-            similarityWarnings.forEach(addWarning);
-            if (pipeline.pass2.candidateThemes.length < 5) {
-              throw new Error('Pass 2 produced fewer than 5 candidate themes.');
-            }
+            const { settingProfile, targetNovelMode } = expandSettingProfile({
+              settingSeed: pipeline.settingSeed,
+              styleProfile: pipeline.pass1.styleProfile
+            });
+            if (!validateSettingProfile(settingProfile)) throw new Error('Pass 2 generated incomplete settingProfile.');
+            pipeline.pass2.settingProfile = settingProfile;
+            pipeline.pass2.targetNovelMode = targetNovelMode;
             passState.status = 'ok';
             passState.errorCode = null;
             passState.errorMessage = null;
             passState.lastRunAt = nowIso();
             passDiagnostics.pass2 = structuredClone(passState);
-            writeTrace('pipeline.pass2.ok', 'Pass 2 theme ideation complete', {
+            writeTrace('pipeline.pass2.ok', 'Pass 2 setting expansion complete', {
               requestId: passState.requestId,
-              candidateCount: pipeline.pass2.candidateThemes.length,
               temperature: passState.temperature
             });
           } catch (err) {
-            setPassError(passState, 'pass2', 'NKG_PASS2_THEME_IDEATION_ERROR', err instanceof Error ? err.message : String(err));
-            writeTrace('pipeline.pass2.error', 'Pass 2 theme ideation failed', { error: passState.errorMessage });
+            setPassError(passState, 'pass2', 'NKG_PASS2_SETTING_EXPANSION_ERROR', err instanceof Error ? err.message : String(err));
+            writeTrace('pipeline.pass2.error', 'Pass 2 setting expansion failed', { error: passState.errorMessage });
             throw err;
           }
           return;
@@ -564,44 +680,92 @@
           const passState = pipeline.pass3.state;
           passState.status = 'running';
           passState.requestId = mkRequestId('nkg_pass3');
-          passState.temperature = pipeline.config.temperatures.themeSelection;
+          passState.temperature = pipeline.config.temperatures.themeIdeation;
           noteRequestId(passState.requestId);
           passDiagnostics.pass3 = structuredClone(passState);
           try {
-            if (pipeline.pass2.state.status !== 'ok') throw new Error('Pass 3 requires successful Pass 2 outputs.');
-            if (!Array.isArray(pipeline.pass2.candidateThemes) || pipeline.pass2.candidateThemes.length < 5) {
-              throw new Error('Pass 3 requires at least 5 candidate themes.');
+            if (pipeline.pass2.state.status !== 'ok' || !pipeline.pass2.settingProfile || !pipeline.pass2.targetNovelMode) {
+              throw new Error('Pass 3 requires successful Pass 2 settingProfile + targetNovelMode outputs.');
             }
-            const selectedTheme = pipeline.pass2.candidateThemes[pipeline.selectedThemeIndex] || pipeline.pass2.candidateThemes[0];
-            pipeline.pass3.selectedThemeTitle = selectedTheme.title;
-            pipeline.pass3.selectedThemeRationale = selectedTheme.rationale;
+            const candidates = createThemeCandidates({
+              styleProfile: pipeline.pass1.styleProfile,
+              settingProfile: pipeline.pass2.settingProfile,
+              targetNovelMode: pipeline.pass2.targetNovelMode,
+              settingSeed: pipeline.settingSeed
+            });
+            const { sorted, similarityWarnings } = applyThemeQualityScoring({
+              candidates,
+              styleProfile: pipeline.pass1.styleProfile,
+              settingProfile: pipeline.pass2.settingProfile,
+              settingSeed: pipeline.settingSeed
+            });
+            pipeline.pass3.candidateThemes = sorted.slice(0, Math.max(5, sorted.length));
+            similarityWarnings.forEach(addWarning);
+            if (pipeline.pass3.candidateThemes.length < 5) {
+              throw new Error('Pass 3 produced fewer than 5 candidate themes.');
+            }
+            passState.status = 'ok';
+            passState.errorCode = null;
+            passState.errorMessage = null;
+            passState.lastRunAt = nowIso();
+            passDiagnostics.pass3 = structuredClone(passState);
+            writeTrace('pipeline.pass3.ok', 'Pass 3 theme ideation complete', {
+              requestId: passState.requestId,
+              candidateCount: pipeline.pass3.candidateThemes.length,
+              temperature: passState.temperature
+            });
+          } catch (err) {
+            setPassError(passState, 'pass3', 'NKG_PASS3_THEME_IDEATION_ERROR', err instanceof Error ? err.message : String(err));
+            writeTrace('pipeline.pass3.error', 'Pass 3 theme ideation failed', { error: passState.errorMessage });
+            throw err;
+          }
+          return;
+        }
+
+        if (passId === 'pass4') {
+          const passState = pipeline.pass4.state;
+          passState.status = 'running';
+          passState.requestId = mkRequestId('nkg_pass4');
+          passState.temperature = pipeline.config.temperatures.themeSelection;
+          noteRequestId(passState.requestId);
+          passDiagnostics.pass4 = structuredClone(passState);
+          try {
+            if (pipeline.pass3.state.status !== 'ok') throw new Error('Pass 4 requires successful Pass 3 outputs.');
+            if (!Array.isArray(pipeline.pass3.candidateThemes) || pipeline.pass3.candidateThemes.length < 5) {
+              throw new Error('Pass 4 requires at least 5 candidate themes.');
+            }
+            const selectedTheme = pipeline.pass3.candidateThemes[pipeline.selectedThemeIndex] || pipeline.pass3.candidateThemes[0];
+            pipeline.pass4.selectedThemeTitle = selectedTheme.title;
+            pipeline.pass4.selectedThemeRationale = selectedTheme.rationale;
             if (selectedTheme.originalityScore < 5) {
               addWarning(`Selected theme may be too generic: "${selectedTheme.title}" (originality ${selectedTheme.originalityScore}).`);
             }
 
             const nkgBlock = buildOfficialNkgBlock({
               styleProfile: pipeline.pass1.styleProfile,
-              targetNovelMode: pipeline.pass1.targetNovelMode,
-              candidates: pipeline.pass2.candidateThemes,
-              selectedThemeTitle: pipeline.pass3.selectedThemeTitle,
-              selectedThemeRationale: pipeline.pass3.selectedThemeRationale
+              settingProfile: pipeline.pass2.settingProfile,
+              targetNovelMode: pipeline.pass2.targetNovelMode,
+              candidates: pipeline.pass3.candidateThemes,
+              selectedThemeTitle: pipeline.pass4.selectedThemeTitle,
+              selectedThemeRationale: pipeline.pass4.selectedThemeRationale
             });
             validateFinalNkgBlock(nkgBlock);
             state.outputs.nkg = nkgBlock;
+            persistVisibleNkgDocument(nkgBlock);
 
             passState.status = 'ok';
             passState.errorCode = null;
             passState.errorMessage = null;
             passState.lastRunAt = nowIso();
-            passDiagnostics.pass3 = structuredClone(passState);
-            writeTrace('pipeline.pass3.ok', 'Pass 3 theme selection + final NKG write complete', {
+            passDiagnostics.pass4 = structuredClone(passState);
+            writeTrace('pipeline.pass4.ok', 'Pass 4 theme selection + final NKG write complete', {
               requestId: passState.requestId,
-              selectedThemeTitle: pipeline.pass3.selectedThemeTitle,
+              selectedThemeTitle: pipeline.pass4.selectedThemeTitle,
               temperature: passState.temperature
             });
           } catch (err) {
-            setPassError(passState, 'pass3', 'NKG_PASS3_THEME_SELECTION_ERROR', err instanceof Error ? err.message : String(err));
-            writeTrace('pipeline.pass3.error', 'Pass 3 theme selection/normalization failed', { error: passState.errorMessage });
+            setPassError(passState, 'pass4', 'NKG_PASS4_THEME_SELECTION_ERROR', err instanceof Error ? err.message : String(err));
+            writeTrace('pipeline.pass4.error', 'Pass 4 theme selection/normalization failed', { error: passState.errorMessage });
             throw err;
           }
           return;
@@ -664,7 +828,8 @@
           state.project.themePipeline.pass1.state = createPassState();
           state.project.themePipeline.pass2.state = createPassState();
           state.project.themePipeline.pass3.state = createPassState();
-          resetPipelineOutputs();
+          state.project.themePipeline.pass4.state = createPassState();
+          resetPipelineOutputs({ clearNkgOutput: true });
         }
         setMetaUpdatedAt();
         writeTrace('stage.reset', `${stageId} reset`, { stageId });
@@ -673,13 +838,14 @@
       const runNkgStyleThemeStage = () => {
         runStage('nkgStyleTheme');
         state.diagnostics.nkgStyleTheme.warnings = [];
-        resetPipelineOutputs();
+        resetPipelineOutputs({ clearNkgOutput: false });
         try {
           runThemePipelinePass('pass1');
           runThemePipelinePass('pass2');
           runThemePipelinePass('pass3');
+          runThemePipelinePass('pass4');
           if (state.outputs.nkg === null) {
-            throw new Error('Final NKG block is null after pass 3.');
+            throw new Error('Final NKG block is null after pass 4.');
           }
           completeStage('nkgStyleTheme');
         } catch (err) {
@@ -745,15 +911,17 @@
         const cp_12_style_profile_generated =
           state.project.themePipeline.pass1.state.status === 'ok' &&
           validateStyleProfile(state.project.themePipeline.pass1.styleProfile || {});
-        const cp_13_theme_candidates_generated =
+        const cp_13_setting_profile_generated =
           state.project.themePipeline.pass2.state.status === 'ok' &&
-          Array.isArray(state.project.themePipeline.pass2.candidateThemes) &&
-          state.project.themePipeline.pass2.candidateThemes.length >= 5;
-        const cp_14_central_theme_selected =
+          validateSettingProfile(state.project.themePipeline.pass2.settingProfile || {});
+        const cp_14_theme_candidates_generated =
           state.project.themePipeline.pass3.state.status === 'ok' &&
-          String(state.project.themePipeline.pass3.selectedThemeTitle || '').trim().length > 0 &&
-          String(state.project.themePipeline.pass3.selectedThemeRationale || '').trim().length > 0;
-        const cp_15_first_nkg_block_written = (() => {
+          Array.isArray(state.project.themePipeline.pass3.candidateThemes) &&
+          state.project.themePipeline.pass3.candidateThemes.length >= 5;
+        const cp_15_central_theme_selected_and_nkg_written =
+          state.project.themePipeline.pass4.state.status === 'ok' &&
+          String(state.project.themePipeline.pass4.selectedThemeTitle || '').trim().length > 0 &&
+          String(state.project.themePipeline.pass4.selectedThemeRationale || '').trim().length > 0 && (() => {
           try {
             validateFinalNkgBlock(state.outputs.nkg);
             return true;
@@ -770,9 +938,9 @@
           cp_05_phase1_shell_stable,
           cp_11_nkg_input_ready,
           cp_12_style_profile_generated,
-          cp_13_theme_candidates_generated,
-          cp_14_central_theme_selected,
-          cp_15_first_nkg_block_written
+          cp_13_setting_profile_generated,
+          cp_14_theme_candidates_generated,
+          cp_15_central_theme_selected_and_nkg_written
         };
       };
 
@@ -838,6 +1006,20 @@
         }
       };
 
+      (() => {
+        try {
+          const raw = localStorage.getItem(NKG_PROJECT_DOC_STORAGE_KEY);
+          if (!raw) return;
+          const parsed = JSON.parse(raw);
+          validateFinalNkgBlock(parsed);
+          state.outputs.nkg = parsed;
+          writeTrace('storage.restore', 'Restored persisted NKG projecte 1 document from localStorage');
+        } catch (err) {
+          writeTrace('storage.warning', 'Ignored invalid persisted NKG projecte 1 document', { error: err instanceof Error ? err.message : String(err) });
+          try { localStorage.removeItem(NKG_PROJECT_DOC_STORAGE_KEY); } catch (_e) {}
+        }
+      })();
+
       evaluateCheckpoints();
       writeTrace('system.ready', 'Phase 2 first NKG slice shell initialized');
 
@@ -861,7 +1043,9 @@
         checkpointId: document.getElementById('checkpointId'),
         buildCheckpointBtn: document.getElementById('buildCheckpointBtn'),
         checkpointPayload: document.getElementById('checkpointPayload'),
-        themePipelineRoot: document.getElementById('themePipelineRoot')
+        themePipelineRoot: document.getElementById('themePipelineRoot'),
+        themePipelineDebugRoot: document.getElementById('themePipelineDebugRoot'),
+        nkgProjectDocRoot: document.getElementById('nkgProjectDocRoot')
       };
 
       const escapeHtml = (text) => String(text)
@@ -870,6 +1054,59 @@
         .replaceAll('>', '&gt;')
         .replaceAll('"', '&quot;')
         .replaceAll("'", '&#039;');
+
+      const renderStyleProfileList = (styleProfile) => {
+        if (!styleProfile) return '<li>Not available yet.</li>';
+        return REQUIRED_STYLE_PROFILE_FIELDS
+          .map(field => `<li><strong>${escapeHtml(field)}</strong>: ${escapeHtml(styleProfile[field])}</li>`)
+          .join('');
+      };
+
+      const renderSettingProfileList = (settingProfile) => {
+        if (!settingProfile) return '<li>Not available yet.</li>';
+        const scalarFields = [
+          'environmentType',
+          'geographicTone',
+          'climateMood',
+          'socialTexture',
+          'institutionalPresence',
+          'publicVsPrivateTension',
+          'fitRationale'
+        ];
+        const scalarRows = scalarFields.map(field => `<li><strong>${escapeHtml(field)}</strong>: ${escapeHtml(settingProfile[field])}</li>`).join('');
+        const motifs = Array.isArray(settingProfile.recurringAtmosphericMotifs)
+          ? settingProfile.recurringAtmosphericMotifs.map(motif => `<li>${escapeHtml(motif)}</li>`).join('')
+          : '<li>Not available yet.</li>';
+        return `${scalarRows}<li><strong>recurringAtmosphericMotifs</strong><ul>${motifs}</ul></li>`;
+      };
+
+      const renderNkgProjectDocument = (state) => {
+        const nkg = state.outputs.nkg;
+        if (!nkg) {
+          nodes.nkgProjectDocRoot.innerHTML = '<p class="muted">No generated NKG document yet. Fill inputs and run the main generation flow once.</p>';
+          return;
+        }
+        const candidateItems = (nkg.themeExploration?.candidates || [])
+          .map((candidate, index) => `<li><strong>${index + 1}. ${escapeHtml(candidate.title)}</strong> — ${escapeHtml(candidate.rationale)}</li>`)
+          .join('');
+
+        nodes.nkgProjectDocRoot.innerHTML = `
+          <p><strong>Author reference:</strong> ${escapeHtml(nkg.authorReference || '-')}</p>
+          <p><strong>Setting seed:</strong> ${escapeHtml(nkg.styleSource?.settingSeed || '-')}</p>
+          <h3>Style profile</h3>
+          <ul>${renderStyleProfileList(nkg.styleProfile)}</ul>
+          <h3>Expanded setting profile</h3>
+          <ul>${renderSettingProfileList(nkg.settingProfile)}</ul>
+          <h3>Target novel mode</h3>
+          <p><strong>${escapeHtml(nkg.targetNovelMode?.label || '-')}</strong></p>
+          <p>${escapeHtml(nkg.targetNovelMode?.explanation || '-')}</p>
+          <h3>Candidate themes</h3>
+          <ol>${candidateItems || '<li>No candidates available.</li>'}</ol>
+          <h3>Selected central theme</h3>
+          <p><strong>${escapeHtml(nkg.themeExploration?.selectedThemeTitle || '-')}</strong></p>
+          <p><strong>Rationale:</strong> ${escapeHtml(nkg.themeExploration?.selectedThemeRationale || '-')}</p>
+        `;
+      };
 
       const render = () => {
         const state = AppCore.getState();
@@ -884,7 +1121,7 @@
               <div class="muted">startedAt: ${s.startedAt || '-'} | finishedAt: ${s.finishedAt || '-'} | retries: ${s.retries}</div>
               <div class="muted">requestId: ${s.requestId || '-'}</div>
               <div class="muted">error: ${escapeHtml(s.errorCode || '-')}: ${escapeHtml(s.errorMessage || '-')}</div>
-              ${isPhase1TextStage ? `<textarea data-role="project-input" data-stage-id="${stage.id}" placeholder="${stage.label} notes">${escapeHtml(state.project[stage.id])}</textarea>` : '<div class="muted">Managed by 3-pass pipeline + official NKG write.</div>'}
+              ${isPhase1TextStage ? `<textarea data-role="project-input" data-stage-id="${stage.id}" placeholder="${stage.label} notes">${escapeHtml(state.project[stage.id])}</textarea>` : '<div class="muted">Managed by 4-pass pipeline + official NKG write.</div>'}
               <div class="actions">
                 <button data-role="run" data-stage-id="${stage.id}">Run</button>
                 <button data-role="complete" data-stage-id="${stage.id}">Complete</button>
@@ -896,7 +1133,7 @@
         }).join('');
 
         nodes.checkpointId.innerHTML = Object.keys(state.diagnostics.checkpoints)
-          .map(id => `<option value="${id}" ${id === 'cp_15_first_nkg_block_written' ? 'selected' : ''}>${id}</option>`)
+          .map(id => `<option value="${id}" ${id === 'cp_15_central_theme_selected_and_nkg_written' ? 'selected' : ''}>${id}</option>`)
           .join('');
 
         AppCore.updateUiSnapshot({
@@ -912,6 +1149,7 @@
           `<div><strong>Pass 1 status:</strong> ${nkgDiagnostics.pass1.status} | requestId: ${nkgDiagnostics.pass1.requestId || '-'} </div>`,
           `<div><strong>Pass 2 status:</strong> ${nkgDiagnostics.pass2.status} | requestId: ${nkgDiagnostics.pass2.requestId || '-'} </div>`,
           `<div><strong>Pass 3 status:</strong> ${nkgDiagnostics.pass3.status} | requestId: ${nkgDiagnostics.pass3.requestId || '-'} </div>`,
+          `<div><strong>Pass 4 status:</strong> ${nkgDiagnostics.pass4.status} | requestId: ${nkgDiagnostics.pass4.requestId || '-'} </div>`,
           `<div><strong>Warnings:</strong> ${nkgDiagnostics.warnings.length}</div>`,
           `<div><strong>Last error:</strong> ${state.diagnostics.lastError ? escapeHtml(`${state.diagnostics.lastError.stageId} (${state.diagnostics.lastError.errorCode}) ${state.diagnostics.lastError.errorMessage}`) : '-'}</div>`
         ].join('');
@@ -925,16 +1163,13 @@
 
         const pipeline = state.project.themePipeline;
         nodes.themePipelineRoot.innerHTML = `
-          <div class="actions" style="margin-bottom:.5rem;">
-            <button data-role="run-nkg-stage">Run official nkgStyleTheme stage (Pass 1 → 2 → 3)</button>
-          </div>
           <div class="field">
             <label for="authorReference">Author reference</label>
             <input id="authorReference" data-role="theme-input" data-field="authorReference" value="${escapeHtml(pipeline.authorReference)}" placeholder="e.g. Ursula K. Le Guin" />
           </div>
           <div class="field">
-            <label for="desiredSetting">Desired setting</label>
-            <input id="desiredSetting" data-role="theme-input" data-field="desiredSetting" value="${escapeHtml(pipeline.desiredSetting)}" placeholder="e.g. storm-battered orbital colony" />
+            <label for="settingSeed">Setting seed (short phrase)</label>
+            <input id="settingSeed" data-role="theme-input" data-field="settingSeed" value="${escapeHtml(pipeline.settingSeed)}" placeholder="e.g. Nordic towns / industrial coast / inland mountain villages" />
           </div>
           ${pipeline.sampleParagraphs.map((value, index) => `
             <div class="field">
@@ -942,31 +1177,44 @@
               <textarea id="sampleParagraph_${index}" data-role="theme-input" data-field="sampleParagraph" data-paragraph-index="${index}" placeholder="Sample paragraph ${index + 1}">${escapeHtml(value)}</textarea>
             </div>
           `).join('')}
+          <div class="actions" style="margin-top:.75rem;">
+            <button data-role="run-nkg-stage">Generate NKG projecte 1</button>
+          </div>
+          <div class="muted">Stage status: ${state.stages.nkgStyleTheme.status} | last successful: ${state.meta.lastSuccessfulStage || '-'}</div>
+        `;
 
+        nodes.themePipelineDebugRoot.innerHTML = `
           <h3>Temperature strategy (explicit config)</h3>
           <pre>${escapeHtml(JSON.stringify(pipeline.config.temperatures, null, 2))}</pre>
 
           <h3>Pass 1 — Style analysis</h3>
           <button data-role="run-theme-pass" data-pass-id="pass1">Run Pass 1</button>
           <div class="muted">status: ${pipeline.pass1.state.status} | lastRunAt: ${pipeline.pass1.state.lastRunAt || '-'} | requestId: ${pipeline.pass1.state.requestId || '-'} | temperature: ${pipeline.pass1.state.temperature ?? '-'}</div>
-          <pre>${escapeHtml(JSON.stringify({ styleProfile: pipeline.pass1.styleProfile, targetNovelMode: pipeline.pass1.targetNovelMode, error: pipeline.pass1.state.errorMessage }, null, 2))}</pre>
+          <pre>${escapeHtml(JSON.stringify({ styleProfile: pipeline.pass1.styleProfile, error: pipeline.pass1.state.errorMessage }, null, 2))}</pre>
 
-          <h3>Pass 2 — Theme ideation</h3>
+          <h3>Pass 2 — Setting expansion</h3>
           <button data-role="run-theme-pass" data-pass-id="pass2">Run Pass 2</button>
           <div class="muted">status: ${pipeline.pass2.state.status} | lastRunAt: ${pipeline.pass2.state.lastRunAt || '-'} | requestId: ${pipeline.pass2.state.requestId || '-'} | temperature: ${pipeline.pass2.state.temperature ?? '-'}</div>
-          <pre>${escapeHtml(JSON.stringify({ candidateThemes: pipeline.pass2.candidateThemes, error: pipeline.pass2.state.errorMessage }, null, 2))}</pre>
+          <pre>${escapeHtml(JSON.stringify({ settingProfile: pipeline.pass2.settingProfile, targetNovelMode: pipeline.pass2.targetNovelMode, error: pipeline.pass2.state.errorMessage }, null, 2))}</pre>
 
-          <h3>Pass 3 — Theme selection and normalization</h3>
+          <h3>Pass 3 — Theme ideation</h3>
+          <button data-role="run-theme-pass" data-pass-id="pass3">Run Pass 3</button>
+          <div class="muted">status: ${pipeline.pass3.state.status} | lastRunAt: ${pipeline.pass3.state.lastRunAt || '-'} | requestId: ${pipeline.pass3.state.requestId || '-'} | temperature: ${pipeline.pass3.state.temperature ?? '-'}</div>
+          <pre>${escapeHtml(JSON.stringify({ candidateThemes: pipeline.pass3.candidateThemes, error: pipeline.pass3.state.errorMessage }, null, 2))}</pre>
+
+          <h3>Pass 4 — Theme selection and normalization</h3>
           <div class="field">
             <label for="selectedThemeIndex">Selected theme index</label>
             <select id="selectedThemeIndex" data-role="theme-input" data-field="selectedThemeIndex">
-              ${pipeline.pass2.candidateThemes.map((theme, index) => `<option value="${index}" ${pipeline.selectedThemeIndex === index ? 'selected' : ''}>${index}: ${escapeHtml(theme.title)}</option>`).join('') || '<option value="0">0: (run Pass 2 first)</option>'}
+              ${pipeline.pass3.candidateThemes.map((theme, index) => `<option value="${index}" ${pipeline.selectedThemeIndex === index ? 'selected' : ''}>${index}: ${escapeHtml(theme.title)}</option>`).join('') || '<option value="0">0: (run Pass 3 first)</option>'}
             </select>
           </div>
-          <button data-role="run-theme-pass" data-pass-id="pass3">Run Pass 3</button>
-          <div class="muted">status: ${pipeline.pass3.state.status} | lastRunAt: ${pipeline.pass3.state.lastRunAt || '-'} | requestId: ${pipeline.pass3.state.requestId || '-'} | temperature: ${pipeline.pass3.state.temperature ?? '-'}</div>
-          <pre>${escapeHtml(JSON.stringify({ selectedThemeTitle: pipeline.pass3.selectedThemeTitle, selectedThemeRationale: pipeline.pass3.selectedThemeRationale, officialNkgOutput: state.outputs.nkg, error: pipeline.pass3.state.errorMessage, warnings: state.diagnostics.nkgStyleTheme.warnings }, null, 2))}</pre>
+          <button data-role="run-theme-pass" data-pass-id="pass4">Run Pass 4</button>
+          <div class="muted">status: ${pipeline.pass4.state.status} | lastRunAt: ${pipeline.pass4.state.lastRunAt || '-'} | requestId: ${pipeline.pass4.state.requestId || '-'} | temperature: ${pipeline.pass4.state.temperature ?? '-'}</div>
+          <pre>${escapeHtml(JSON.stringify({ selectedThemeTitle: pipeline.pass4.selectedThemeTitle, selectedThemeRationale: pipeline.pass4.selectedThemeRationale, officialNkgOutput: state.outputs.nkg, error: pipeline.pass4.state.errorMessage, warnings: state.diagnostics.nkgStyleTheme.warnings }, null, 2))}</pre>
         `;
+
+        renderNkgProjectDocument(state);
       };
 
       const bindEvents = () => {
@@ -1015,7 +1263,7 @@
           }
         });
 
-        nodes.themePipelineRoot.addEventListener('input', (event) => {
+        const handleThemeInput = (event) => {
           const target = event.target;
           if (!(target instanceof HTMLElement)) return;
           if (target.dataset.role !== 'theme-input') return;
@@ -1032,24 +1280,14 @@
             console.error('Theme pipeline input update failed', err);
             alert(`Theme pipeline input update failed: ${err instanceof Error ? err.message : String(err)}`);
           }
-        });
+        };
+
+        nodes.themePipelineRoot.addEventListener('input', handleThemeInput);
+        nodes.themePipelineDebugRoot.addEventListener('input', handleThemeInput);
 
         nodes.themePipelineRoot.addEventListener('click', (event) => {
           const target = event.target;
           if (!(target instanceof HTMLElement)) return;
-          if (target.dataset.role === 'run-theme-pass') {
-            const passId = target.dataset.passId;
-            if (!passId) return;
-            try {
-              AppCore.dispatch({ type: 'THEME_PIPELINE_RUN_PASS', passId });
-              render();
-            } catch (err) {
-              console.error('Theme pipeline pass failed', err);
-              alert(`Theme pipeline pass failed: ${err instanceof Error ? err.message : String(err)}`);
-              render();
-            }
-          }
-
           if (target.dataset.role === 'run-nkg-stage') {
             try {
               AppCore.dispatch({ type: 'NKG_STYLE_THEME_RUN_STAGE' });
@@ -1059,6 +1297,22 @@
               alert(`nkgStyleTheme stage failed: ${err instanceof Error ? err.message : String(err)}`);
               render();
             }
+          }
+        });
+
+        nodes.themePipelineDebugRoot.addEventListener('click', (event) => {
+          const target = event.target;
+          if (!(target instanceof HTMLElement)) return;
+          if (target.dataset.role !== 'run-theme-pass') return;
+          const passId = target.dataset.passId;
+          if (!passId) return;
+          try {
+            AppCore.dispatch({ type: 'THEME_PIPELINE_RUN_PASS', passId });
+            render();
+          } catch (err) {
+            console.error('Theme pipeline pass failed', err);
+            alert(`Theme pipeline pass failed: ${err instanceof Error ? err.message : String(err)}`);
+            render();
           }
         });
       };

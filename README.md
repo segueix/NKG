@@ -10,14 +10,15 @@ NKG currently supports stable Phase 1 foundation work and is prepared to begin t
 
 ## Current implementation status
 - Phase 1 foundation is closed and stable.
-- Repository is ready to start the first real Phase 2 NKG style/theme slice.
+- First Phase 2 style/theme slice can generate and auto-display a primary readable document named **NKG projecte 1** from a simplified flow (author + 3 samples + short setting seed).
+- Structured NKG output remains written to `AppState.outputs.nkg` for diagnostics and checkpoint tracking.
 
 ### Active foundation flow
 `idea → premise → structure → characters → world → chapterOutline`
 
 ### Checkpoints
 - Legacy Phase 1 visibility: `cp_01_scope_clean`, `cp_02_ui_phase1_only`, `cp_03_appstate_ready`, `cp_04_stage_runner_ready`, `cp_05_phase1_shell_stable`
-- Planned first-slice Phase 2: `cp_11_nkg_input_ready`, `cp_12_style_profile_generated`, `cp_13_theme_candidates_generated`, `cp_14_central_theme_selected`, `cp_15_first_nkg_block_written`
+- Planned first-slice Phase 2: `cp_11_nkg_input_ready`, `cp_12_style_profile_generated`, `cp_13_setting_profile_generated`, `cp_14_theme_candidates_generated`, `cp_15_central_theme_selected_and_nkg_written`
 
 ## 3-phase plan (fixed)
 1. **Phase 1 (closed):** pre-NKG functional foundation.
@@ -39,4 +40,4 @@ NKG currently supports stable Phase 1 foundation work and is prepared to begin t
 - `docs/current-task.md` is the temporary per-task working prompt file and is expected to be overwritten between tasks.
 
 ## First real Phase 2 slice target
-The planned `nkgStyleTheme` task should execute a 3-pass pipeline (style analysis → theme ideation → theme selection/normalization) and write the first official non-empty block to `AppState.outputs.nkg`.
+The planned `nkgStyleTheme` task executes a 4-pass pipeline (style analysis → setting expansion → theme ideation → theme selection/normalization) and writes the first official non-empty block to `AppState.outputs.nkg`.
