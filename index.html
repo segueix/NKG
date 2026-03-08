@@ -21,6 +21,11 @@
     pre { white-space: pre-wrap; word-break: break-word; margin: 0; max-height: 300px; overflow: auto; }
     .ok { color: #22c55e; }
     .bad { color: #f87171; }
+    .primary-doc { border-color: #0ea5e9; background: #0b2537; }
+    .doc-output { border: 1px solid #334155; border-radius: 8px; padding: .9rem; background: #0f172a; }
+    .doc-output h3 { margin-top: 1rem; }
+    .doc-output ul, .doc-output ol { margin: .35rem 0 .75rem 1.15rem; padding: 0; }
+    details.panel summary { cursor: pointer; font-weight: 600; }
   </style>
 </head>
 <body>
@@ -50,10 +55,21 @@
     </div>
 
     <section class="panel" style="margin-top: 1rem;">
-      <h2>nkgStyleTheme Stage — 3-Pass Pipeline (diagnosable)</h2>
-      <p class="muted">Pass 1: style analysis → Pass 2: theme ideation → Pass 3: theme selection + normalization → official write to <code>AppState.outputs.nkg</code>.</p>
+      <h2>Main generation flow</h2>
+      <p class="muted">User path: author reference + 3 samples + setting → run generation once → auto-populated <strong>NKG projecte 1</strong>.</p>
       <div id="themePipelineRoot"></div>
     </section>
+
+    <section class="panel primary-doc" style="margin-top: 1rem;">
+      <h2>NKG projecte 1</h2>
+      <p class="muted">Main generated project document. Automatically populated from successful Phase 2 style/theme output.</p>
+      <div id="nkgProjectDocRoot" class="doc-output"></div>
+    </section>
+
+    <details class="panel" style="margin-top: 1rem;">
+      <summary>Advanced pipeline diagnostics (optional)</summary>
+      <div id="themePipelineDebugRoot" style="margin-top: .75rem;"></div>
+    </details>
 
     <section class="panel" style="margin-top: 1rem;">
       <h2>AppState Snapshot</h2>
@@ -110,6 +126,8 @@
       'cp_14_central_theme_selected',
       'cp_15_first_nkg_block_written'
     ];
+
+    const NKG_PROJECT_DOC_STORAGE_KEY = 'nkg.projecte1.visibleDocument.v1';
 
     // ===== Business/state logic =====
     const AppCore = (() => {
@@ -246,14 +264,30 @@
         state.diagnostics.nkgStyleTheme.requestIds = state.diagnostics.nkgStyleTheme.requestIds.slice(0, 20);
       };
 
-      const resetPipelineOutputs = () => {
+      const persistVisibleNkgDocument = (nkgBlock) => {
+        try {
+          if (nkgBlock === null) {
+            localStorage.removeItem(NKG_PROJECT_DOC_STORAGE_KEY);
+            return;
+          }
+          localStorage.setItem(NKG_PROJECT_DOC_STORAGE_KEY, JSON.stringify(nkgBlock));
+        } catch (err) {
+          addWarning(`Could not persist visible NKG document: ${err instanceof Error ? err.message : String(err)}`);
+          writeTrace('storage.warning', 'Failed to persist visible NKG document', { error: err instanceof Error ? err.message : String(err) });
+        }
+      };
+
+      const resetPipelineOutputs = ({ clearNkgOutput = false } = {}) => {
         const pipeline = state.project.themePipeline;
         pipeline.pass1.styleProfile = null;
         pipeline.pass1.targetNovelMode = null;
         pipeline.pass2.candidateThemes = [];
         pipeline.pass3.selectedThemeTitle = '';
         pipeline.pass3.selectedThemeRationale = '';
-        state.outputs.nkg = null;
+        if (clearNkgOutput) {
+          state.outputs.nkg = null;
+          persistVisibleNkgDocument(null);
+        }
       };
 
       const updateProjectText = (stageId, text) => {
@@ -588,6 +622,7 @@
             });
             validateFinalNkgBlock(nkgBlock);
             state.outputs.nkg = nkgBlock;
+            persistVisibleNkgDocument(nkgBlock);
 
             passState.status = 'ok';
             passState.errorCode = null;
@@ -664,7 +699,7 @@
           state.project.themePipeline.pass1.state = createPassState();
           state.project.themePipeline.pass2.state = createPassState();
           state.project.themePipeline.pass3.state = createPassState();
-          resetPipelineOutputs();
+          resetPipelineOutputs({ clearNkgOutput: true });
         }
         setMetaUpdatedAt();
         writeTrace('stage.reset', `${stageId} reset`, { stageId });
@@ -673,7 +708,7 @@
       const runNkgStyleThemeStage = () => {
         runStage('nkgStyleTheme');
         state.diagnostics.nkgStyleTheme.warnings = [];
-        resetPipelineOutputs();
+        resetPipelineOutputs({ clearNkgOutput: false });
         try {
           runThemePipelinePass('pass1');
           runThemePipelinePass('pass2');
@@ -838,6 +873,20 @@
         }
       };
 
+      (() => {
+        try {
+          const raw = localStorage.getItem(NKG_PROJECT_DOC_STORAGE_KEY);
+          if (!raw) return;
+          const parsed = JSON.parse(raw);
+          validateFinalNkgBlock(parsed);
+          state.outputs.nkg = parsed;
+          writeTrace('storage.restore', 'Restored persisted NKG projecte 1 document from localStorage');
+        } catch (err) {
+          writeTrace('storage.warning', 'Ignored invalid persisted NKG projecte 1 document', { error: err instanceof Error ? err.message : String(err) });
+          try { localStorage.removeItem(NKG_PROJECT_DOC_STORAGE_KEY); } catch (_e) {}
+        }
+      })();
+
       evaluateCheckpoints();
       writeTrace('system.ready', 'Phase 2 first NKG slice shell initialized');
 
@@ -861,7 +910,9 @@
         checkpointId: document.getElementById('checkpointId'),
         buildCheckpointBtn: document.getElementById('buildCheckpointBtn'),
         checkpointPayload: document.getElementById('checkpointPayload'),
-        themePipelineRoot: document.getElementById('themePipelineRoot')
+        themePipelineRoot: document.getElementById('themePipelineRoot'),
+        themePipelineDebugRoot: document.getElementById('themePipelineDebugRoot'),
+        nkgProjectDocRoot: document.getElementById('nkgProjectDocRoot')
       };
 
       const escapeHtml = (text) => String(text)
@@ -870,6 +921,39 @@
         .replaceAll('>', '&gt;')
         .replaceAll('"', '&quot;')
         .replaceAll("'", '&#039;');
+
+      const renderStyleProfileList = (styleProfile) => {
+        if (!styleProfile) return '<li>Not available yet.</li>';
+        return REQUIRED_STYLE_PROFILE_FIELDS
+          .map(field => `<li><strong>${escapeHtml(field)}</strong>: ${escapeHtml(styleProfile[field])}</li>`)
+          .join('');
+      };
+
+      const renderNkgProjectDocument = (state) => {
+        const nkg = state.outputs.nkg;
+        if (!nkg) {
+          nodes.nkgProjectDocRoot.innerHTML = '<p class="muted">No generated NKG document yet. Fill inputs and run the main generation flow once.</p>';
+          return;
+        }
+        const candidateItems = (nkg.themeExploration?.candidates || [])
+          .map((candidate, index) => `<li><strong>${index + 1}. ${escapeHtml(candidate.title)}</strong> — ${escapeHtml(candidate.rationale)}</li>`)
+          .join('');
+
+        nodes.nkgProjectDocRoot.innerHTML = `
+          <p><strong>Author reference:</strong> ${escapeHtml(nkg.authorReference || '-')}</p>
+          <p><strong>Setting:</strong> ${escapeHtml(nkg.styleSource?.settingIntent || '-')}</p>
+          <h3>Style profile</h3>
+          <ul>${renderStyleProfileList(nkg.styleProfile)}</ul>
+          <h3>Target novel mode</h3>
+          <p><strong>${escapeHtml(nkg.targetNovelMode?.label || '-')}</strong></p>
+          <p>${escapeHtml(nkg.targetNovelMode?.explanation || '-')}</p>
+          <h3>Candidate themes</h3>
+          <ol>${candidateItems || '<li>No candidates available.</li>'}</ol>
+          <h3>Selected central theme</h3>
+          <p><strong>${escapeHtml(nkg.themeExploration?.selectedThemeTitle || '-')}</strong></p>
+          <p><strong>Rationale:</strong> ${escapeHtml(nkg.themeExploration?.selectedThemeRationale || '-')}</p>
+        `;
+      };
 
       const render = () => {
         const state = AppCore.getState();
@@ -925,9 +1009,6 @@
 
         const pipeline = state.project.themePipeline;
         nodes.themePipelineRoot.innerHTML = `
-          <div class="actions" style="margin-bottom:.5rem;">
-            <button data-role="run-nkg-stage">Run official nkgStyleTheme stage (Pass 1 → 2 → 3)</button>
-          </div>
           <div class="field">
             <label for="authorReference">Author reference</label>
             <input id="authorReference" data-role="theme-input" data-field="authorReference" value="${escapeHtml(pipeline.authorReference)}" placeholder="e.g. Ursula K. Le Guin" />
@@ -942,7 +1023,13 @@
               <textarea id="sampleParagraph_${index}" data-role="theme-input" data-field="sampleParagraph" data-paragraph-index="${index}" placeholder="Sample paragraph ${index + 1}">${escapeHtml(value)}</textarea>
             </div>
           `).join('')}
+          <div class="actions" style="margin-top:.75rem;">
+            <button data-role="run-nkg-stage">Generate NKG projecte 1</button>
+          </div>
+          <div class="muted">Stage status: ${state.stages.nkgStyleTheme.status} | last successful: ${state.meta.lastSuccessfulStage || '-'}</div>
+        `;
 
+        nodes.themePipelineDebugRoot.innerHTML = `
           <h3>Temperature strategy (explicit config)</h3>
           <pre>${escapeHtml(JSON.stringify(pipeline.config.temperatures, null, 2))}</pre>
 
@@ -967,6 +1054,8 @@
           <div class="muted">status: ${pipeline.pass3.state.status} | lastRunAt: ${pipeline.pass3.state.lastRunAt || '-'} | requestId: ${pipeline.pass3.state.requestId || '-'} | temperature: ${pipeline.pass3.state.temperature ?? '-'}</div>
           <pre>${escapeHtml(JSON.stringify({ selectedThemeTitle: pipeline.pass3.selectedThemeTitle, selectedThemeRationale: pipeline.pass3.selectedThemeRationale, officialNkgOutput: state.outputs.nkg, error: pipeline.pass3.state.errorMessage, warnings: state.diagnostics.nkgStyleTheme.warnings }, null, 2))}</pre>
         `;
+
+        renderNkgProjectDocument(state);
       };
 
       const bindEvents = () => {
@@ -1015,7 +1104,7 @@
           }
         });
 
-        nodes.themePipelineRoot.addEventListener('input', (event) => {
+        const handleThemeInput = (event) => {
           const target = event.target;
           if (!(target instanceof HTMLElement)) return;
           if (target.dataset.role !== 'theme-input') return;
@@ -1032,24 +1121,14 @@
             console.error('Theme pipeline input update failed', err);
             alert(`Theme pipeline input update failed: ${err instanceof Error ? err.message : String(err)}`);
           }
-        });
+        };
+
+        nodes.themePipelineRoot.addEventListener('input', handleThemeInput);
+        nodes.themePipelineDebugRoot.addEventListener('input', handleThemeInput);
 
         nodes.themePipelineRoot.addEventListener('click', (event) => {
           const target = event.target;
           if (!(target instanceof HTMLElement)) return;
-          if (target.dataset.role === 'run-theme-pass') {
-            const passId = target.dataset.passId;
-            if (!passId) return;
-            try {
-              AppCore.dispatch({ type: 'THEME_PIPELINE_RUN_PASS', passId });
-              render();
-            } catch (err) {
-              console.error('Theme pipeline pass failed', err);
-              alert(`Theme pipeline pass failed: ${err instanceof Error ? err.message : String(err)}`);
-              render();
-            }
-          }
-
           if (target.dataset.role === 'run-nkg-stage') {
             try {
               AppCore.dispatch({ type: 'NKG_STYLE_THEME_RUN_STAGE' });
@@ -1059,6 +1138,22 @@
               alert(`nkgStyleTheme stage failed: ${err instanceof Error ? err.message : String(err)}`);
               render();
             }
+          }
+        });
+
+        nodes.themePipelineDebugRoot.addEventListener('click', (event) => {
+          const target = event.target;
+          if (!(target instanceof HTMLElement)) return;
+          if (target.dataset.role !== 'run-theme-pass') return;
+          const passId = target.dataset.passId;
+          if (!passId) return;
+          try {
+            AppCore.dispatch({ type: 'THEME_PIPELINE_RUN_PASS', passId });
+            render();
+          } catch (err) {
+            console.error('Theme pipeline pass failed', err);
+            alert(`Theme pipeline pass failed: ${err instanceof Error ? err.message : String(err)}`);
+            render();
           }
         });
       };

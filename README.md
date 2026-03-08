@@ -10,7 +10,8 @@ NKG currently supports stable Phase 1 foundation work and is prepared to begin t
 
 ## Current implementation status
 - Phase 1 foundation is closed and stable.
-- Repository is ready to start the first real Phase 2 NKG style/theme slice.
+- First Phase 2 style/theme slice can generate and auto-display a primary readable document named **NKG projecte 1** from the main generation flow.
+- Structured NKG output remains written to `AppState.outputs.nkg` for diagnostics and checkpoint tracking.
 
 ### Active foundation flow
 `idea → premise → structure → characters → world → chapterOutline`
