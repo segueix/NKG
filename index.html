@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>NKG — Phase 1 Shell</title>
+  <title>NKG — Phase 2 First Slice</title>
   <style>
     :root { font-family: Arial, sans-serif; color-scheme: light dark; }
     body { margin: 0; background: #0f172a; color: #e2e8f0; }
@@ -25,12 +25,12 @@
 </head>
 <body>
   <div class="wrap">
-    <h1>NKG — Phase 1 Foundation Shell</h1>
-    <p class="muted">Scope: idea → premise → structure → characters → world → chapterOutline. No manuscript writing, NKG generation, Bible generation, or export.</p>
+    <h1>NKG — Phase 2 First Official NKG Slice</h1>
+    <p class="muted">Scope: Phase 1 foundation + first Phase 2 style/theme pipeline write into <code>AppState.outputs.nkg</code>. No Bible generation, export, or manuscript writing.</p>
 
     <div class="grid">
       <section class="panel">
-        <h2>Phase 1 Stages</h2>
+        <h2>Stages</h2>
         <div id="stagesRoot"></div>
       </section>
 
@@ -41,13 +41,7 @@
         <div id="checkpointRoot"></div>
         <h3 style="margin-top: 1rem;">Checkpoint shell</h3>
         <label for="checkpointId">Checkpoint ID:</label>
-        <select id="checkpointId">
-          <option>cp_01_scope_clean</option>
-          <option>cp_02_ui_phase1_only</option>
-          <option>cp_03_appstate_ready</option>
-          <option>cp_04_stage_runner_ready</option>
-          <option selected>cp_05_phase1_shell_stable</option>
-        </select>
+        <select id="checkpointId"></select>
         <button id="buildCheckpointBtn">Build checkpoint payload</button>
         <pre id="checkpointPayload"></pre>
         <h3 style="margin-top: 1rem;">Trace</h3>
@@ -56,8 +50,8 @@
     </div>
 
     <section class="panel" style="margin-top: 1rem;">
-      <h2>3-Pass Theme Pipeline (diagnosable)</h2>
-      <p class="muted">Pass 1: style analysis → Pass 2: theme ideation → Pass 3: theme selection and normalization.</p>
+      <h2>nkgStyleTheme Stage — 3-Pass Pipeline (diagnosable)</h2>
+      <p class="muted">Pass 1: style analysis → Pass 2: theme ideation → Pass 3: theme selection + normalization → official write to <code>AppState.outputs.nkg</code>.</p>
       <div id="themePipelineRoot"></div>
     </section>
 
@@ -75,12 +69,47 @@
       { id: 'structure', label: 'Structure' },
       { id: 'characters', label: 'Characters' },
       { id: 'world', label: 'World' },
-      { id: 'chapterOutline', label: 'Chapter Outline' }
+      { id: 'chapterOutline', label: 'Chapter Outline' },
+      { id: 'nkgStyleTheme', label: 'NKG Style/Theme Slice' }
     ];
 
+    const PHASE1_STAGE_IDS = ['idea', 'premise', 'structure', 'characters', 'world', 'chapterOutline'];
     const STAGE_IDS = STAGE_REGISTRY.map(s => s.id);
     const ALLOWED_STATUSES = ['idle', 'running', 'ok', 'error'];
     const TOP_LEVEL_STATE_KEYS = ['meta', 'stages', 'project', 'outputs', 'diagnostics'];
+
+    const NKG_STYLE_THEME_CONFIG = {
+      temperatures: {
+        styleAnalysis: 0.2,
+        themeIdeation: 0.9,
+        themeSelection: 0.35
+      }
+    };
+
+    const REQUIRED_STYLE_PROFILE_FIELDS = [
+      'rhythm',
+      'sentenceLength',
+      'focalization',
+      'sensoryDensity',
+      'metaphorDensity',
+      'emotionalTemperature',
+      'actionVsReflection',
+      'narrativePressure',
+      'proseMode'
+    ];
+
+    const CHECKPOINT_IDS = [
+      'cp_01_scope_clean',
+      'cp_02_ui_phase1_only',
+      'cp_03_appstate_ready',
+      'cp_04_stage_runner_ready',
+      'cp_05_phase1_shell_stable',
+      'cp_11_nkg_input_ready',
+      'cp_12_style_profile_generated',
+      'cp_13_theme_candidates_generated',
+      'cp_14_central_theme_selected',
+      'cp_15_first_nkg_block_written'
+    ];
 
     // ===== Business/state logic =====
     const AppCore = (() => {
@@ -102,14 +131,27 @@
         lastRunAt: null,
         errorCode: null,
         errorMessage: null,
-        requestId: null
+        requestId: null,
+        temperature: null
+      });
+
+      const createNkgDiagnostics = () => ({
+        currentPhase: 'phase2',
+        currentStage: null,
+        lastSuccessfulStage: null,
+        pass1: createPassState(),
+        pass2: createPassState(),
+        pass3: createPassState(),
+        requestIds: [],
+        warnings: [],
+        lastError: null
       });
 
       const initialState = {
         meta: {
           appName: 'NKG',
-          phase: 'phase1',
-          version: '0.1.0',
+          phase: 'phase2',
+          version: '0.2.0',
           createdAt: nowIso(),
           updatedAt: nowIso(),
           currentStage: null,
@@ -117,16 +159,17 @@
         },
         stages: Object.fromEntries(STAGE_IDS.map(id => [id, createInitialStageState()])),
         project: {
-          ...Object.fromEntries(STAGE_IDS.map(id => [id, ''])),
+          ...Object.fromEntries(PHASE1_STAGE_IDS.map(id => [id, ''])),
           themePipeline: {
+            config: structuredClone(NKG_STYLE_THEME_CONFIG),
             authorReference: '',
             sampleParagraphs: ['', '', ''],
             desiredSetting: '',
             selectedThemeIndex: 0,
             pass1: {
               state: createPassState(),
-              styleProfile: '',
-              targetNovelMode: ''
+              styleProfile: null,
+              targetNovelMode: null
             },
             pass2: {
               state: createPassState(),
@@ -135,8 +178,7 @@
             pass3: {
               state: createPassState(),
               selectedThemeTitle: '',
-              selectedThemeRationale: '',
-              finalNkgWrite: ''
+              selectedThemeRationale: ''
             }
           }
         },
@@ -145,21 +187,17 @@
           bible: null
         },
         diagnostics: {
-          checkpoints: {
-            cp_01_scope_clean: false,
-            cp_02_ui_phase1_only: false,
-            cp_03_appstate_ready: false,
-            cp_04_stage_runner_ready: false,
-            cp_05_phase1_shell_stable: false
-          },
+          checkpoints: Object.fromEntries(CHECKPOINT_IDS.map(id => [id, false])),
           trace: [],
-          lastError: null
+          lastError: null,
+          nkgStyleTheme: createNkgDiagnostics()
         }
       };
 
       const state = structuredClone(initialState);
       let uiSnapshot = {
-        renderedStageIds: []
+        renderedStageIds: [],
+        checkpointOptionIds: []
       };
 
       const assertStageId = (stageId) => {
@@ -170,7 +208,7 @@
 
       const writeTrace = (type, message, context = {}) => {
         state.diagnostics.trace.unshift({ at: nowIso(), type, message, context });
-        state.diagnostics.trace = state.diagnostics.trace.slice(0, 25);
+        state.diagnostics.trace = state.diagnostics.trace.slice(0, 30);
       };
 
       const setMetaUpdatedAt = () => {
@@ -179,67 +217,52 @@
 
       const setCurrentStage = (stageIdOrNull) => {
         state.meta.currentStage = stageIdOrNull;
+        state.diagnostics.nkgStyleTheme.currentStage = stageIdOrNull;
       };
 
       const setLastSuccessfulStage = (stageIdOrNull) => {
         state.meta.lastSuccessfulStage = stageIdOrNull;
+        state.diagnostics.nkgStyleTheme.lastSuccessfulStage = stageIdOrNull;
+      };
+
+      const setDiagnosticsError = (scope, errorCode, errorMessage) => {
+        const payload = {
+          at: nowIso(),
+          stageId: scope,
+          errorCode: String(errorCode),
+          errorMessage: String(errorMessage)
+        };
+        state.diagnostics.lastError = payload;
+        state.diagnostics.nkgStyleTheme.lastError = payload;
+      };
+
+      const addWarning = (warning) => {
+        state.diagnostics.nkgStyleTheme.warnings.unshift(`${nowIso()} ${warning}`);
+        state.diagnostics.nkgStyleTheme.warnings = state.diagnostics.nkgStyleTheme.warnings.slice(0, 10);
+      };
+
+      const noteRequestId = (requestId) => {
+        state.diagnostics.nkgStyleTheme.requestIds.unshift(requestId);
+        state.diagnostics.nkgStyleTheme.requestIds = state.diagnostics.nkgStyleTheme.requestIds.slice(0, 20);
+      };
+
+      const resetPipelineOutputs = () => {
+        const pipeline = state.project.themePipeline;
+        pipeline.pass1.styleProfile = null;
+        pipeline.pass1.targetNovelMode = null;
+        pipeline.pass2.candidateThemes = [];
+        pipeline.pass3.selectedThemeTitle = '';
+        pipeline.pass3.selectedThemeRationale = '';
+        state.outputs.nkg = null;
       };
 
       const updateProjectText = (stageId, text) => {
-        assertStageId(stageId);
+        if (!PHASE1_STAGE_IDS.includes(stageId)) {
+          throw new Error(`Text updates are only valid for Phase 1 stages. Received: ${stageId}`);
+        }
         state.project[stageId] = String(text ?? '');
         setMetaUpdatedAt();
         writeTrace('project.update', `${stageId} text updated`, { stageId });
-      };
-
-      const validatePipelineInputsForPass1 = () => {
-        const { authorReference, sampleParagraphs, desiredSetting } = state.project.themePipeline;
-        if (!authorReference.trim()) throw new Error('Pass 1 requires an author reference.');
-        if (!desiredSetting.trim()) throw new Error('Pass 1 requires a desired setting.');
-        const nonEmptyParagraphs = sampleParagraphs.filter(p => String(p).trim().length > 0);
-        if (nonEmptyParagraphs.length < 3) throw new Error('Pass 1 requires 3 non-empty sample paragraphs.');
-      };
-
-      const computeStyleProfile = () => {
-        const { authorReference, sampleParagraphs, desiredSetting } = state.project.themePipeline;
-        const joinedSamples = sampleParagraphs.join(' ');
-        const sentenceCount = joinedSamples.split(/[.!?]+/).map(v => v.trim()).filter(Boolean).length;
-        const averageSentenceLength = sentenceCount > 0 ? Math.round(joinedSamples.split(/\s+/).filter(Boolean).length / sentenceCount) : 0;
-        const tone = averageSentenceLength > 16 ? 'deliberate' : 'punchy';
-        return `Reference:${authorReference.trim()} | tone:${tone} | avgSentenceLength:${averageSentenceLength} | settingFocus:${desiredSetting.trim()}`;
-      };
-
-      const computeTargetNovelMode = () => {
-        const normalized = state.project.themePipeline.desiredSetting.toLowerCase();
-        if (normalized.includes('space') || normalized.includes('future') || normalized.includes('planet')) return 'speculative';
-        if (normalized.includes('kingdom') || normalized.includes('magic') || normalized.includes('myth')) return 'epic';
-        if (normalized.includes('city') || normalized.includes('street') || normalized.includes('detective')) return 'gritty';
-        return 'character-driven';
-      };
-
-      const computeCandidateThemes = () => {
-        const pipeline = state.project.themePipeline;
-        const mode = pipeline.pass1.targetNovelMode;
-        const setting = pipeline.desiredSetting.trim();
-        return [
-          { title: 'Belonging versus Reinvention', rationale: `In a ${mode} frame, identity pressure is heightened by ${setting}.` },
-          { title: 'Power and Moral Cost', rationale: `The setting of ${setting} creates trade-offs where every gain extracts an ethical price.` },
-          { title: 'Memory as Survival', rationale: `A ${mode} narrative can anchor conflict in what must be remembered to endure ${setting}.` },
-          { title: 'Intimacy under Systemic Strain', rationale: `Relationships are tested by institutions and customs embedded in ${setting}.` },
-          { title: 'Hope as Defiance', rationale: `Characters in ${setting} can weaponize hope against fatalistic pressure.` }
-        ];
-      };
-
-      const createFinalNkgWrite = (theme) => {
-        const pipeline = state.project.themePipeline;
-        return [
-          'NKG THEME BRIEF (Phase 1 Placeholder — not full NKG generation)',
-          `Setting: ${pipeline.desiredSetting.trim()}`,
-          `Target novel mode: ${pipeline.pass1.targetNovelMode}`,
-          `Central theme: ${theme.title}`,
-          `Rationale: ${theme.rationale}`,
-          'Use this as a pre-NKG checkpoint artifact to guide later generation phases.'
-        ].join('\n');
       };
 
       const updateThemePipelineInput = ({ field, value, paragraphIndex }) => {
@@ -262,91 +285,329 @@
         writeTrace('pipeline.input.update', 'Theme pipeline input updated', { field, paragraphIndex });
       };
 
+      const inputValidationErrors = () => {
+        const { authorReference, sampleParagraphs, desiredSetting } = state.project.themePipeline;
+        const errors = [];
+        if (!authorReference.trim()) errors.push('Author reference must be non-empty.');
+        const missingSamples = sampleParagraphs
+          .map((paragraph, index) => ({ paragraph, index }))
+          .filter(x => !String(x.paragraph).trim())
+          .map(x => x.index + 1);
+        if (missingSamples.length > 0) errors.push(`All 3 sample paragraphs must be non-empty (missing: ${missingSamples.join(', ')}).`);
+        if (!desiredSetting.trim()) errors.push('Setting/location must be non-empty.');
+        return errors;
+      };
+
+      const inferDensity = (ratio) => {
+        if (ratio < 0.06) return 'low';
+        if (ratio < 0.12) return 'medium';
+        return 'high';
+      };
+
+      const tokenize = (text) => String(text).toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(Boolean);
+
+      const computeStyleProfile = () => {
+        const pipeline = state.project.themePipeline;
+        const sampleText = pipeline.sampleParagraphs.join(' ').trim();
+        const tokens = tokenize(sampleText);
+        const sentenceParts = sampleText.split(/[.!?]+/).map(v => v.trim()).filter(Boolean);
+        const avgSentenceLength = sentenceParts.length > 0 ? tokens.length / sentenceParts.length : 0;
+        const firstPersonCount = tokens.filter(t => ['i', 'me', 'my', 'mine', 'we', 'our', 'us'].includes(t)).length;
+        const sensoryCount = tokens.filter(t => ['cold', 'warm', 'smell', 'taste', 'light', 'dark', 'sound', 'touch', 'wind', 'dust'].includes(t)).length;
+        const metaphorCount = tokens.filter(t => ['like', 'as', 'as-if', 'mirror', 'echo', 'shadow'].includes(t)).length;
+        const reflectiveCount = tokens.filter(t => ['think', 'remember', 'feel', 'wonder', 'doubt', 'regret'].includes(t)).length;
+        const actionCount = tokens.filter(t => ['run', 'jump', 'cut', 'fight', 'chase', 'move', 'grab', 'break'].includes(t)).length;
+        const pressureCount = tokens.filter(t => ['must', 'urgent', 'deadline', 'now', 'before', 'risk', 'threat'].includes(t)).length;
+
+        const styleProfile = {
+          rhythm: avgSentenceLength > 20 ? 'slow-breathing and layered' : avgSentenceLength > 12 ? 'balanced cadence with controlled variation' : 'quick, clipped cadence with frequent pivots',
+          sentenceLength: avgSentenceLength > 20 ? 'long-leaning sentences' : avgSentenceLength > 12 ? 'mixed sentence lengths' : 'short-leaning sentences',
+          focalization: firstPersonCount > tokens.length * 0.03 ? 'intimate interior focalization' : 'external-leaning focalization with selective interior access',
+          sensoryDensity: inferDensity(tokens.length ? sensoryCount / tokens.length : 0),
+          metaphorDensity: inferDensity(tokens.length ? metaphorCount / tokens.length : 0),
+          emotionalTemperature: pressureCount > 4 ? 'high-strain emotional field' : reflectiveCount > actionCount ? 'contemplative emotional field' : 'kinetic emotional field',
+          actionVsReflection: actionCount > reflectiveCount ? 'action-forward' : actionCount < reflectiveCount ? 'reflection-forward' : 'balanced action and reflection',
+          narrativePressure: pressureCount > 4 ? 'compressed urgency and consequence' : 'measured escalation with intermittent pressure spikes',
+          proseMode: 'abstracted style profile derived from reference + samples; never author imitation'
+        };
+
+        const targetNovelMode = (() => {
+          const settingText = pipeline.desiredSetting.toLowerCase();
+          if (settingText.includes('space') || settingText.includes('orbital') || settingText.includes('future')) {
+            return {
+              label: 'speculative pressure narrative',
+              explanation: 'Setting implies systems-level pressure, institutional constraints, and adaptive identity conflict.'
+            };
+          }
+          if (settingText.includes('kingdom') || settingText.includes('myth') || settingText.includes('ancient')) {
+            return {
+              label: 'mythic-ethical narrative',
+              explanation: 'Setting favors moral consequence arcs where personal desire collides with inherited order.'
+            };
+          }
+          return {
+            label: 'character-friction narrative',
+            explanation: 'Setting favors psychological contradiction and social pressure over spectacle.'
+          };
+        })();
+
+        return { styleProfile, targetNovelMode };
+      };
+
+      const createThemeCandidates = (styleProfile, targetNovelMode, setting) => {
+        const settingText = setting.trim();
+        const labels = [
+          {
+            title: 'Mercy as Strategic Risk',
+            rationale: `In ${settingText}, mercy can preserve humanity while undermining immediate advantage, fitting ${targetNovelMode.label}.`
+          },
+          {
+            title: 'Belonging versus Self-Invention',
+            rationale: `Characters in ${settingText} are forced to choose between social acceptance and authentic transformation.`
+          },
+          {
+            title: 'Truth under Institutional Convenience',
+            rationale: `The social pressures of ${settingText} reward convenient myths, testing moral courage.`
+          },
+          {
+            title: 'Intimacy under Surveillance',
+            rationale: `When privacy erodes in ${settingText}, relationships must renegotiate trust and vulnerability.`
+          },
+          {
+            title: 'Inheritance versus Repair',
+            rationale: `Past harm shapes present duties in ${settingText}, creating tension between loyalty and justice.`
+          },
+          {
+            title: 'Power that Requires Self-Betrayal',
+            rationale: `Ambition in ${settingText} may demand identity compromise, amplifying ${styleProfile.actionVsReflection}.`
+          },
+          {
+            title: 'Hope as Disciplined Defiance',
+            rationale: `Hope becomes a practiced ethic against fatalism in ${settingText}.`
+          }
+        ];
+
+        return labels.map((entry, index) => ({
+          ...entry,
+          draftId: index + 1,
+          originalityScore: 0,
+          compatibilityScore: 0,
+          repetitionRisk: 0,
+          totalScore: 0
+        }));
+      };
+
+      const jaccardSimilarity = (a, b) => {
+        const setA = new Set(tokenize(a));
+        const setB = new Set(tokenize(b));
+        const intersection = [...setA].filter(x => setB.has(x)).length;
+        const union = new Set([...setA, ...setB]).size || 1;
+        return intersection / union;
+      };
+
+      const applyThemeQualityScoring = (candidates, styleProfile, setting) => {
+        const clicheTokens = ['destiny', 'good versus evil', 'chosen one', 'power of friendship', 'love conquers all'];
+        const settingTokens = new Set(tokenize(setting));
+        const styleHints = new Set(tokenize(`${styleProfile.narrativePressure} ${styleProfile.actionVsReflection} ${styleProfile.emotionalTemperature}`));
+
+        candidates.forEach((candidate, index) => {
+          const text = `${candidate.title} ${candidate.rationale}`.toLowerCase();
+          const tokenSet = new Set(tokenize(text));
+          const clicheHits = clicheTokens.filter(token => text.includes(token)).length;
+          const specificity = Math.min(4, [...tokenSet].filter(token => token.length > 7).length / 2);
+          const moralTension = /versus|risk|cost|betrayal|justice|truth|mercy/.test(text) ? 2.5 : 1;
+          const contradiction = /yet|while|against|despite|betrayal|repair/.test(text) ? 2 : 0.8;
+          const styleCompat = [...styleHints].filter(token => text.includes(token)).length > 0 ? 2.2 : 1.5;
+          const settingCompat = [...settingTokens].filter(token => tokenSet.has(token)).length > 0 ? 2.2 : 1.3;
+          const repetitionRisk = Math.round(candidates.reduce((sum, other, otherIndex) => {
+            if (otherIndex === index) return sum;
+            return sum + jaccardSimilarity(candidate.title, other.title);
+          }, 0) / Math.max(1, candidates.length - 1) * 100);
+
+          candidate.originalityScore = Number(Math.max(1, 9 - clicheHits * 2 - repetitionRisk / 25 + specificity).toFixed(2));
+          candidate.compatibilityScore = Number(Math.min(10, styleCompat + settingCompat + moralTension + contradiction).toFixed(2));
+          candidate.repetitionRisk = repetitionRisk;
+          candidate.totalScore = Number((candidate.originalityScore + candidate.compatibilityScore - repetitionRisk / 20).toFixed(2));
+        });
+
+        const sorted = [...candidates].sort((a, b) => b.totalScore - a.totalScore);
+        const similarityWarnings = [];
+        for (let i = 0; i < sorted.length; i += 1) {
+          for (let j = i + 1; j < sorted.length; j += 1) {
+            const similarity = jaccardSimilarity(sorted[i].title, sorted[j].title);
+            if (similarity >= 0.55) {
+              similarityWarnings.push(`Theme similarity warning: "${sorted[i].title}" and "${sorted[j].title}" are too close (${similarity.toFixed(2)}).`);
+            }
+          }
+        }
+
+        return { sorted, similarityWarnings };
+      };
+
+      const validateStyleProfile = (styleProfile) => REQUIRED_STYLE_PROFILE_FIELDS.every(field => {
+        return Object.prototype.hasOwnProperty.call(styleProfile, field) && String(styleProfile[field]).trim().length > 0;
+      });
+
+      const buildOfficialNkgBlock = ({ styleProfile, targetNovelMode, candidates, selectedThemeTitle, selectedThemeRationale }) => {
+        const pipeline = state.project.themePipeline;
+        return {
+          authorReference: pipeline.authorReference.trim(),
+          styleSource: {
+            authorName: pipeline.authorReference.trim(),
+            sampleParagraphs: pipeline.sampleParagraphs.map(p => p.trim()),
+            settingIntent: pipeline.desiredSetting.trim()
+          },
+          styleProfile,
+          targetNovelMode,
+          themeExploration: {
+            candidates: candidates.map(candidate => ({
+              title: candidate.title,
+              rationale: candidate.rationale,
+              originalityScore: candidate.originalityScore,
+              compatibilityScore: candidate.compatibilityScore,
+              repetitionRisk: candidate.repetitionRisk
+            })),
+            selectedThemeTitle,
+            selectedThemeRationale
+          }
+        };
+      };
+
+      const validateFinalNkgBlock = (nkgBlock) => {
+        if (!nkgBlock || typeof nkgBlock !== 'object') throw new Error('Final NKG write must be a non-null object.');
+        if (!validateStyleProfile(nkgBlock.styleProfile)) throw new Error('styleProfile is missing required fields.');
+        if (!Array.isArray(nkgBlock.themeExploration?.candidates) || nkgBlock.themeExploration.candidates.length < 5) {
+          throw new Error('At least 5 candidate themes are required in final NKG write.');
+        }
+        if (!String(nkgBlock.themeExploration.selectedThemeTitle || '').trim()) throw new Error('selectedThemeTitle must be non-empty.');
+        if (!String(nkgBlock.themeExploration.selectedThemeRationale || '').trim()) throw new Error('selectedThemeRationale must be non-empty.');
+      };
+
       const runThemePipelinePass = (passId) => {
         const pipeline = state.project.themePipeline;
-        const now = nowIso();
-        const markError = (passState, errorCode, errorMessage) => {
+        const passDiagnostics = state.diagnostics.nkgStyleTheme;
+        const setPassError = (passState, passKey, errorCode, errorMessage) => {
           passState.status = 'error';
           passState.errorCode = errorCode;
           passState.errorMessage = errorMessage;
-          passState.lastRunAt = now;
-          passState.requestId = mkRequestId(`theme_${passId}`);
-          state.diagnostics.lastError = { at: now, stageId: `themePipeline.${passId}`, errorCode, errorMessage };
+          passState.lastRunAt = nowIso();
+          if (!passState.requestId) passState.requestId = mkRequestId(`theme_${passKey}_error`);
+          passDiagnostics[passKey] = structuredClone(passState);
+          setDiagnosticsError(`nkgStyleTheme.${passKey}`, errorCode, errorMessage);
         };
 
         if (passId === 'pass1') {
           const passState = pipeline.pass1.state;
+          passState.status = 'running';
+          passState.requestId = mkRequestId('nkg_pass1');
+          passState.temperature = pipeline.config.temperatures.styleAnalysis;
+          noteRequestId(passState.requestId);
+          passDiagnostics.pass1 = structuredClone(passState);
           try {
-            validatePipelineInputsForPass1();
-            passState.status = 'running';
-            passState.requestId = mkRequestId('theme_pass1');
-            pipeline.pass1.styleProfile = computeStyleProfile();
-            pipeline.pass1.targetNovelMode = computeTargetNovelMode();
+            const inputErrors = inputValidationErrors();
+            if (inputErrors.length > 0) throw new Error(inputErrors.join(' '));
+            const { styleProfile, targetNovelMode } = computeStyleProfile();
+            if (!validateStyleProfile(styleProfile)) throw new Error('Pass 1 generated incomplete styleProfile.');
+            pipeline.pass1.styleProfile = styleProfile;
+            pipeline.pass1.targetNovelMode = targetNovelMode;
             passState.status = 'ok';
             passState.errorCode = null;
             passState.errorMessage = null;
-            passState.lastRunAt = now;
-            writeTrace('pipeline.pass1.ok', 'Pass 1 style analysis complete', {
-              styleProfile: pipeline.pass1.styleProfile,
-              targetNovelMode: pipeline.pass1.targetNovelMode
-            });
+            passState.lastRunAt = nowIso();
+            passDiagnostics.pass1 = structuredClone(passState);
+            writeTrace('pipeline.pass1.ok', 'Pass 1 style analysis complete', { requestId: passState.requestId, temperature: passState.temperature });
           } catch (err) {
-            markError(passState, 'THEME_PASS1_ERROR', err instanceof Error ? err.message : String(err));
+            setPassError(passState, 'pass1', 'NKG_PASS1_STYLE_ANALYSIS_ERROR', err instanceof Error ? err.message : String(err));
             writeTrace('pipeline.pass1.error', 'Pass 1 style analysis failed', { error: passState.errorMessage });
             throw err;
           }
-        } else if (passId === 'pass2') {
+          return;
+        }
+
+        if (passId === 'pass2') {
           const passState = pipeline.pass2.state;
+          passState.status = 'running';
+          passState.requestId = mkRequestId('nkg_pass2');
+          passState.temperature = pipeline.config.temperatures.themeIdeation;
+          noteRequestId(passState.requestId);
+          passDiagnostics.pass2 = structuredClone(passState);
           try {
-            if (pipeline.pass1.state.status !== 'ok') {
-              throw new Error('Pass 2 requires Pass 1 to complete successfully.');
+            if (pipeline.pass1.state.status !== 'ok' || !pipeline.pass1.styleProfile || !pipeline.pass1.targetNovelMode) {
+              throw new Error('Pass 2 requires successful Pass 1 outputs.');
             }
-            passState.status = 'running';
-            passState.requestId = mkRequestId('theme_pass2');
-            pipeline.pass2.candidateThemes = computeCandidateThemes();
+            const candidates = createThemeCandidates(pipeline.pass1.styleProfile, pipeline.pass1.targetNovelMode, pipeline.desiredSetting);
+            const { sorted, similarityWarnings } = applyThemeQualityScoring(candidates, pipeline.pass1.styleProfile, pipeline.desiredSetting);
+            pipeline.pass2.candidateThemes = sorted.slice(0, Math.max(5, sorted.length));
+            similarityWarnings.forEach(addWarning);
+            if (pipeline.pass2.candidateThemes.length < 5) {
+              throw new Error('Pass 2 produced fewer than 5 candidate themes.');
+            }
             passState.status = 'ok';
             passState.errorCode = null;
             passState.errorMessage = null;
-            passState.lastRunAt = now;
-            writeTrace('pipeline.pass2.ok', 'Pass 2 theme ideation complete', { candidateCount: pipeline.pass2.candidateThemes.length });
+            passState.lastRunAt = nowIso();
+            passDiagnostics.pass2 = structuredClone(passState);
+            writeTrace('pipeline.pass2.ok', 'Pass 2 theme ideation complete', {
+              requestId: passState.requestId,
+              candidateCount: pipeline.pass2.candidateThemes.length,
+              temperature: passState.temperature
+            });
           } catch (err) {
-            markError(passState, 'THEME_PASS2_ERROR', err instanceof Error ? err.message : String(err));
+            setPassError(passState, 'pass2', 'NKG_PASS2_THEME_IDEATION_ERROR', err instanceof Error ? err.message : String(err));
             writeTrace('pipeline.pass2.error', 'Pass 2 theme ideation failed', { error: passState.errorMessage });
             throw err;
           }
-        } else if (passId === 'pass3') {
+          return;
+        }
+
+        if (passId === 'pass3') {
           const passState = pipeline.pass3.state;
+          passState.status = 'running';
+          passState.requestId = mkRequestId('nkg_pass3');
+          passState.temperature = pipeline.config.temperatures.themeSelection;
+          noteRequestId(passState.requestId);
+          passDiagnostics.pass3 = structuredClone(passState);
           try {
-            if (pipeline.pass2.state.status !== 'ok') {
-              throw new Error('Pass 3 requires Pass 2 to complete successfully.');
+            if (pipeline.pass2.state.status !== 'ok') throw new Error('Pass 3 requires successful Pass 2 outputs.');
+            if (!Array.isArray(pipeline.pass2.candidateThemes) || pipeline.pass2.candidateThemes.length < 5) {
+              throw new Error('Pass 3 requires at least 5 candidate themes.');
             }
-            if (pipeline.pass2.candidateThemes.length < 5) {
-              throw new Error('Pass 3 requires at least 5 candidate themes from Pass 2.');
-            }
-            const selectedTheme = pipeline.pass2.candidateThemes[pipeline.selectedThemeIndex];
-            if (!selectedTheme) {
-              throw new Error('Pass 3 selected theme index is out of range.');
-            }
-            passState.status = 'running';
-            passState.requestId = mkRequestId('theme_pass3');
+            const selectedTheme = pipeline.pass2.candidateThemes[pipeline.selectedThemeIndex] || pipeline.pass2.candidateThemes[0];
             pipeline.pass3.selectedThemeTitle = selectedTheme.title;
             pipeline.pass3.selectedThemeRationale = selectedTheme.rationale;
-            pipeline.pass3.finalNkgWrite = createFinalNkgWrite(selectedTheme);
+            if (selectedTheme.originalityScore < 5) {
+              addWarning(`Selected theme may be too generic: "${selectedTheme.title}" (originality ${selectedTheme.originalityScore}).`);
+            }
+
+            const nkgBlock = buildOfficialNkgBlock({
+              styleProfile: pipeline.pass1.styleProfile,
+              targetNovelMode: pipeline.pass1.targetNovelMode,
+              candidates: pipeline.pass2.candidateThemes,
+              selectedThemeTitle: pipeline.pass3.selectedThemeTitle,
+              selectedThemeRationale: pipeline.pass3.selectedThemeRationale
+            });
+            validateFinalNkgBlock(nkgBlock);
+            state.outputs.nkg = nkgBlock;
+
             passState.status = 'ok';
             passState.errorCode = null;
             passState.errorMessage = null;
-            passState.lastRunAt = now;
-            writeTrace('pipeline.pass3.ok', 'Pass 3 theme selection and normalization complete', { selectedThemeTitle: selectedTheme.title });
+            passState.lastRunAt = nowIso();
+            passDiagnostics.pass3 = structuredClone(passState);
+            writeTrace('pipeline.pass3.ok', 'Pass 3 theme selection + final NKG write complete', {
+              requestId: passState.requestId,
+              selectedThemeTitle: pipeline.pass3.selectedThemeTitle,
+              temperature: passState.temperature
+            });
           } catch (err) {
-            markError(passState, 'THEME_PASS3_ERROR', err instanceof Error ? err.message : String(err));
-            writeTrace('pipeline.pass3.error', 'Pass 3 theme selection failed', { error: passState.errorMessage });
+            setPassError(passState, 'pass3', 'NKG_PASS3_THEME_SELECTION_ERROR', err instanceof Error ? err.message : String(err));
+            writeTrace('pipeline.pass3.error', 'Pass 3 theme selection/normalization failed', { error: passState.errorMessage });
             throw err;
           }
-        } else {
-          throw new Error(`Unknown pipeline pass: ${passId}`);
+          return;
         }
 
-        setMetaUpdatedAt();
+        throw new Error(`Unknown pipeline pass: ${passId}`);
       };
 
       const runStage = (stageId) => {
@@ -359,6 +620,7 @@
         stage.errorCode = null;
         stage.errorMessage = null;
         setCurrentStage(stageId);
+        noteRequestId(stage.requestId);
         setMetaUpdatedAt();
         writeTrace('stage.running', `${stageId} started`, { stageId, requestId: stage.requestId });
       };
@@ -374,7 +636,7 @@
         setCurrentStage(null);
         setLastSuccessfulStage(stageId);
         setMetaUpdatedAt();
-        writeTrace('stage.ok', `${stageId} completed`, { stageId });
+        writeTrace('stage.ok', `${stageId} completed`, { stageId, requestId: stage.requestId });
       };
 
       const failStage = (stageId, errorCode = 'STAGE_ERROR', errorMessage = 'Unknown stage error') => {
@@ -387,57 +649,71 @@
         stage.errorMessage = String(errorMessage);
         stage.retries += 1;
         setCurrentStage(null);
-        state.diagnostics.lastError = {
-          at: nowIso(),
-          stageId,
-          errorCode: stage.errorCode,
-          errorMessage: stage.errorMessage
-        };
+        setDiagnosticsError(stageId, stage.errorCode, stage.errorMessage);
         setMetaUpdatedAt();
-        writeTrace('stage.error', `${stageId} failed`, { stageId, errorCode: stage.errorCode });
+        writeTrace('stage.error', `${stageId} failed`, { stageId, errorCode: stage.errorCode, errorMessage: stage.errorMessage });
       };
 
       const resetStage = (stageId) => {
         assertStageId(stageId);
         state.stages[stageId] = createInitialStageState();
-        if (state.meta.currentStage === stageId) {
-          setCurrentStage(null);
-        }
-        if (state.meta.lastSuccessfulStage === stageId) {
-          setLastSuccessfulStage(null);
+        if (state.meta.currentStage === stageId) setCurrentStage(null);
+        if (state.meta.lastSuccessfulStage === stageId) setLastSuccessfulStage(null);
+        if (stageId === 'nkgStyleTheme') {
+          state.diagnostics.nkgStyleTheme = createNkgDiagnostics();
+          state.project.themePipeline.pass1.state = createPassState();
+          state.project.themePipeline.pass2.state = createPassState();
+          state.project.themePipeline.pass3.state = createPassState();
+          resetPipelineOutputs();
         }
         setMetaUpdatedAt();
         writeTrace('stage.reset', `${stageId} reset`, { stageId });
       };
 
+      const runNkgStyleThemeStage = () => {
+        runStage('nkgStyleTheme');
+        state.diagnostics.nkgStyleTheme.warnings = [];
+        resetPipelineOutputs();
+        try {
+          runThemePipelinePass('pass1');
+          runThemePipelinePass('pass2');
+          runThemePipelinePass('pass3');
+          if (state.outputs.nkg === null) {
+            throw new Error('Final NKG block is null after pass 3.');
+          }
+          completeStage('nkgStyleTheme');
+        } catch (err) {
+          failStage('nkgStyleTheme', 'NKG_STYLE_THEME_STAGE_ERROR', err instanceof Error ? err.message : String(err));
+          throw err;
+        } finally {
+          setMetaUpdatedAt();
+        }
+      };
+
       const evaluateCheckpoints = () => {
-        const noForbiddenOutputs = state.outputs.nkg === null && state.outputs.bible === null;
-        const scopeTextClean = !state.diagnostics.trace.some(entry => {
-          const normalizedMessage = String(entry.message || '').toLowerCase();
-          return normalizedMessage.includes('manuscript') || normalizedMessage.includes('prose writing');
-        });
+        const phase1StageIds = PHASE1_STAGE_IDS;
+        const expectedPhase1UiList = phase1StageIds.join(',');
+        const renderedPhase1UiList = uiSnapshot.renderedStageIds.filter(id => phase1StageIds.includes(id)).join(',');
+
         const cp_01_scope_clean =
           state.meta.phase === 'phase1' &&
-          STAGE_IDS.length === 6 &&
-          noForbiddenOutputs &&
-          scopeTextClean;
+          state.outputs.nkg === null &&
+          state.outputs.bible === null &&
+          STAGE_IDS.length === phase1StageIds.length;
 
-        const expectedStageIdList = 'idea,premise,structure,characters,world,chapterOutline';
-        const renderedStageIdList = uiSnapshot.renderedStageIds.join(',');
-        const cp_02_ui_phase1_only =
-          renderedStageIdList === expectedStageIdList &&
-          uiSnapshot.renderedStageIds.length === STAGE_IDS.length;
+        const cp_02_ui_phase1_only = renderedPhase1UiList === expectedPhase1UiList && uiSnapshot.renderedStageIds.length === phase1StageIds.length;
 
         const hasTopKeys = TOP_LEVEL_STATE_KEYS.every(k => Object.prototype.hasOwnProperty.call(state, k));
         const onlyTopKeys = Object.keys(state).length === TOP_LEVEL_STATE_KEYS.length;
         const metaShapeOk =
           typeof state.meta.appName === 'string' &&
-          state.meta.phase === 'phase1' &&
+          typeof state.meta.phase === 'string' &&
           typeof state.meta.version === 'string' &&
           typeof state.meta.createdAt === 'string' &&
           typeof state.meta.updatedAt === 'string' &&
           (state.meta.currentStage === null || STAGE_IDS.includes(state.meta.currentStage)) &&
           (state.meta.lastSuccessfulStage === null || STAGE_IDS.includes(state.meta.lastSuccessfulStage));
+
         const stageShapeOk = STAGE_IDS.every(stageId => {
           const s = state.stages[stageId];
           return s && ALLOWED_STATUSES.includes(s.status)
@@ -453,47 +729,67 @@
           typeof runStage === 'function' &&
           typeof completeStage === 'function' &&
           typeof failStage === 'function' &&
-          typeof resetStage === 'function';
+          typeof resetStage === 'function' &&
+          typeof runNkgStyleThemeStage === 'function';
         const allStageStatesValid = STAGE_IDS.every(stageId => {
           const stage = state.stages[stageId];
-          return ALLOWED_STATUSES.includes(stage.status)
-            && typeof stage.retries === 'number'
-            && stage.retries >= 0;
+          return ALLOWED_STATUSES.includes(stage.status) && typeof stage.retries === 'number' && stage.retries >= 0;
         });
         const cp_04_stage_runner_ready = stageRegistryValid && runnerFnsReady && allStageStatesValid;
 
-        const diagnosticsReady =
-          Array.isArray(state.diagnostics.trace) &&
-          Object.keys(state.diagnostics.checkpoints).length === 5;
-        const cp_05_phase1_shell_stable =
-          cp_01_scope_clean && cp_02_ui_phase1_only && cp_03_appstate_ready && cp_04_stage_runner_ready && diagnosticsReady;
+        const diagnosticsReady = Array.isArray(state.diagnostics.trace) && !!state.diagnostics.nkgStyleTheme;
+        const cp_05_phase1_shell_stable = cp_01_scope_clean && cp_02_ui_phase1_only && cp_03_appstate_ready && cp_04_stage_runner_ready && diagnosticsReady;
+
+        const inputErrors = inputValidationErrors();
+        const cp_11_nkg_input_ready = inputErrors.length === 0;
+        const cp_12_style_profile_generated =
+          state.project.themePipeline.pass1.state.status === 'ok' &&
+          validateStyleProfile(state.project.themePipeline.pass1.styleProfile || {});
+        const cp_13_theme_candidates_generated =
+          state.project.themePipeline.pass2.state.status === 'ok' &&
+          Array.isArray(state.project.themePipeline.pass2.candidateThemes) &&
+          state.project.themePipeline.pass2.candidateThemes.length >= 5;
+        const cp_14_central_theme_selected =
+          state.project.themePipeline.pass3.state.status === 'ok' &&
+          String(state.project.themePipeline.pass3.selectedThemeTitle || '').trim().length > 0 &&
+          String(state.project.themePipeline.pass3.selectedThemeRationale || '').trim().length > 0;
+        const cp_15_first_nkg_block_written = (() => {
+          try {
+            validateFinalNkgBlock(state.outputs.nkg);
+            return true;
+          } catch (_e) {
+            return false;
+          }
+        })();
 
         state.diagnostics.checkpoints = {
           cp_01_scope_clean,
           cp_02_ui_phase1_only,
           cp_03_appstate_ready,
           cp_04_stage_runner_ready,
-          cp_05_phase1_shell_stable
+          cp_05_phase1_shell_stable,
+          cp_11_nkg_input_ready,
+          cp_12_style_profile_generated,
+          cp_13_theme_candidates_generated,
+          cp_14_central_theme_selected,
+          cp_15_first_nkg_block_written
         };
       };
 
       const updateUiSnapshot = (nextUiSnapshot) => {
         uiSnapshot = {
-          renderedStageIds: Array.isArray(nextUiSnapshot?.renderedStageIds)
-            ? [...nextUiSnapshot.renderedStageIds]
-            : []
+          renderedStageIds: Array.isArray(nextUiSnapshot?.renderedStageIds) ? [...nextUiSnapshot.renderedStageIds] : [],
+          checkpointOptionIds: Array.isArray(nextUiSnapshot?.checkpointOptionIds) ? [...nextUiSnapshot.checkpointOptionIds] : []
         };
         evaluateCheckpoints();
       };
 
       const buildCheckpointPayload = (checkpointId) => {
         const validIds = Object.keys(state.diagnostics.checkpoints);
-        if (!validIds.includes(checkpointId)) {
-          throw new Error(`Invalid checkpoint id: ${checkpointId}`);
-        }
+        if (!validIds.includes(checkpointId)) throw new Error(`Invalid checkpoint id: ${checkpointId}`);
         return {
           checkpointId,
-          phase: 'phase1',
+          phase: state.meta.phase,
           createdAt: nowIso(),
           appVersion: state.meta.version,
           appState: structuredClone(state)
@@ -526,25 +822,24 @@
             case 'THEME_PIPELINE_RUN_PASS':
               runThemePipelinePass(action.passId);
               break;
+            case 'NKG_STYLE_THEME_RUN_STAGE':
+              runNkgStyleThemeStage();
+              break;
             default:
               throw new Error(`Unknown action type: ${action.type}`);
           }
           evaluateCheckpoints();
+          setMetaUpdatedAt();
         } catch (err) {
-          state.diagnostics.lastError = {
-            at: nowIso(),
-            stageId: action.stageId || 'system',
-            errorCode: 'DISPATCH_ERROR',
-            errorMessage: err instanceof Error ? err.message : String(err)
-          };
-          writeTrace('system.error', 'Dispatch failure', { action, error: state.diagnostics.lastError.errorMessage });
+          setDiagnosticsError(action.stageId || action.passId || 'system', 'DISPATCH_ERROR', err instanceof Error ? err.message : String(err));
+          writeTrace('system.error', 'Dispatch failure', { action, error: state.diagnostics.lastError?.errorMessage });
           evaluateCheckpoints();
           throw err;
         }
       };
 
       evaluateCheckpoints();
-      writeTrace('system.ready', 'Phase 1 shell initialized');
+      writeTrace('system.ready', 'Phase 2 first NKG slice shell initialized');
 
       return {
         dispatch,
@@ -581,6 +876,7 @@
 
         nodes.stagesRoot.innerHTML = AppCore.stageRegistry.map(stage => {
           const s = state.stages[stage.id];
+          const isPhase1TextStage = PHASE1_STAGE_IDS.includes(stage.id);
           return `
             <article class="stage" data-stage-id="${stage.id}">
               <h3>${stage.label}</h3>
@@ -588,7 +884,7 @@
               <div class="muted">startedAt: ${s.startedAt || '-'} | finishedAt: ${s.finishedAt || '-'} | retries: ${s.retries}</div>
               <div class="muted">requestId: ${s.requestId || '-'}</div>
               <div class="muted">error: ${escapeHtml(s.errorCode || '-')}: ${escapeHtml(s.errorMessage || '-')}</div>
-              <textarea data-role="project-input" data-stage-id="${stage.id}" placeholder="${stage.label} notes">${escapeHtml(state.project[stage.id])}</textarea>
+              ${isPhase1TextStage ? `<textarea data-role="project-input" data-stage-id="${stage.id}" placeholder="${stage.label} notes">${escapeHtml(state.project[stage.id])}</textarea>` : '<div class="muted">Managed by 3-pass pipeline + official NKG write.</div>'}
               <div class="actions">
                 <button data-role="run" data-stage-id="${stage.id}">Run</button>
                 <button data-role="complete" data-stage-id="${stage.id}">Complete</button>
@@ -599,14 +895,24 @@
           `;
         }).join('');
 
+        nodes.checkpointId.innerHTML = Object.keys(state.diagnostics.checkpoints)
+          .map(id => `<option value="${id}" ${id === 'cp_15_first_nkg_block_written' ? 'selected' : ''}>${id}</option>`)
+          .join('');
+
         AppCore.updateUiSnapshot({
-          renderedStageIds: [...nodes.stagesRoot.querySelectorAll('[data-stage-id]')].map(n => n.getAttribute('data-stage-id'))
+          renderedStageIds: [...nodes.stagesRoot.querySelectorAll('[data-stage-id]')].map(n => n.getAttribute('data-stage-id')),
+          checkpointOptionIds: [...nodes.checkpointId.querySelectorAll('option')].map(n => n.getAttribute('value'))
         });
 
+        const nkgDiagnostics = state.diagnostics.nkgStyleTheme;
         nodes.diagnosticsSummary.innerHTML = [
           `<div><strong>Current phase:</strong> ${state.meta.phase}</div>`,
           `<div><strong>Current stage:</strong> ${state.meta.currentStage || '-'}</div>`,
           `<div><strong>Last successful stage:</strong> ${state.meta.lastSuccessfulStage || '-'}</div>`,
+          `<div><strong>Pass 1 status:</strong> ${nkgDiagnostics.pass1.status} | requestId: ${nkgDiagnostics.pass1.requestId || '-'} </div>`,
+          `<div><strong>Pass 2 status:</strong> ${nkgDiagnostics.pass2.status} | requestId: ${nkgDiagnostics.pass2.requestId || '-'} </div>`,
+          `<div><strong>Pass 3 status:</strong> ${nkgDiagnostics.pass3.status} | requestId: ${nkgDiagnostics.pass3.requestId || '-'} </div>`,
+          `<div><strong>Warnings:</strong> ${nkgDiagnostics.warnings.length}</div>`,
           `<div><strong>Last error:</strong> ${state.diagnostics.lastError ? escapeHtml(`${state.diagnostics.lastError.stageId} (${state.diagnostics.lastError.errorCode}) ${state.diagnostics.lastError.errorMessage}`) : '-'}</div>`
         ].join('');
 
@@ -619,6 +925,9 @@
 
         const pipeline = state.project.themePipeline;
         nodes.themePipelineRoot.innerHTML = `
+          <div class="actions" style="margin-bottom:.5rem;">
+            <button data-role="run-nkg-stage">Run official nkgStyleTheme stage (Pass 1 → 2 → 3)</button>
+          </div>
           <div class="field">
             <label for="authorReference">Author reference</label>
             <input id="authorReference" data-role="theme-input" data-field="authorReference" value="${escapeHtml(pipeline.authorReference)}" placeholder="e.g. Ursula K. Le Guin" />
@@ -634,14 +943,17 @@
             </div>
           `).join('')}
 
+          <h3>Temperature strategy (explicit config)</h3>
+          <pre>${escapeHtml(JSON.stringify(pipeline.config.temperatures, null, 2))}</pre>
+
           <h3>Pass 1 — Style analysis</h3>
           <button data-role="run-theme-pass" data-pass-id="pass1">Run Pass 1</button>
-          <div class="muted">status: ${pipeline.pass1.state.status} | lastRunAt: ${pipeline.pass1.state.lastRunAt || '-'} | requestId: ${pipeline.pass1.state.requestId || '-'}</div>
+          <div class="muted">status: ${pipeline.pass1.state.status} | lastRunAt: ${pipeline.pass1.state.lastRunAt || '-'} | requestId: ${pipeline.pass1.state.requestId || '-'} | temperature: ${pipeline.pass1.state.temperature ?? '-'}</div>
           <pre>${escapeHtml(JSON.stringify({ styleProfile: pipeline.pass1.styleProfile, targetNovelMode: pipeline.pass1.targetNovelMode, error: pipeline.pass1.state.errorMessage }, null, 2))}</pre>
 
           <h3>Pass 2 — Theme ideation</h3>
           <button data-role="run-theme-pass" data-pass-id="pass2">Run Pass 2</button>
-          <div class="muted">status: ${pipeline.pass2.state.status} | lastRunAt: ${pipeline.pass2.state.lastRunAt || '-'} | requestId: ${pipeline.pass2.state.requestId || '-'}</div>
+          <div class="muted">status: ${pipeline.pass2.state.status} | lastRunAt: ${pipeline.pass2.state.lastRunAt || '-'} | requestId: ${pipeline.pass2.state.requestId || '-'} | temperature: ${pipeline.pass2.state.temperature ?? '-'}</div>
           <pre>${escapeHtml(JSON.stringify({ candidateThemes: pipeline.pass2.candidateThemes, error: pipeline.pass2.state.errorMessage }, null, 2))}</pre>
 
           <h3>Pass 3 — Theme selection and normalization</h3>
@@ -652,8 +964,8 @@
             </select>
           </div>
           <button data-role="run-theme-pass" data-pass-id="pass3">Run Pass 3</button>
-          <div class="muted">status: ${pipeline.pass3.state.status} | lastRunAt: ${pipeline.pass3.state.lastRunAt || '-'} | requestId: ${pipeline.pass3.state.requestId || '-'}</div>
-          <pre>${escapeHtml(JSON.stringify({ selectedThemeTitle: pipeline.pass3.selectedThemeTitle, selectedThemeRationale: pipeline.pass3.selectedThemeRationale, finalNkgWrite: pipeline.pass3.finalNkgWrite, error: pipeline.pass3.state.errorMessage }, null, 2))}</pre>
+          <div class="muted">status: ${pipeline.pass3.state.status} | lastRunAt: ${pipeline.pass3.state.lastRunAt || '-'} | requestId: ${pipeline.pass3.state.requestId || '-'} | temperature: ${pipeline.pass3.state.temperature ?? '-'}</div>
+          <pre>${escapeHtml(JSON.stringify({ selectedThemeTitle: pipeline.pass3.selectedThemeTitle, selectedThemeRationale: pipeline.pass3.selectedThemeRationale, officialNkgOutput: state.outputs.nkg, error: pipeline.pass3.state.errorMessage, warnings: state.diagnostics.nkgStyleTheme.warnings }, null, 2))}</pre>
         `;
       };
 
@@ -725,16 +1037,28 @@
         nodes.themePipelineRoot.addEventListener('click', (event) => {
           const target = event.target;
           if (!(target instanceof HTMLElement)) return;
-          if (target.dataset.role !== 'run-theme-pass') return;
-          const passId = target.dataset.passId;
-          if (!passId) return;
-          try {
-            AppCore.dispatch({ type: 'THEME_PIPELINE_RUN_PASS', passId });
-            render();
-          } catch (err) {
-            console.error('Theme pipeline pass failed', err);
-            alert(`Theme pipeline pass failed: ${err instanceof Error ? err.message : String(err)}`);
-            render();
+          if (target.dataset.role === 'run-theme-pass') {
+            const passId = target.dataset.passId;
+            if (!passId) return;
+            try {
+              AppCore.dispatch({ type: 'THEME_PIPELINE_RUN_PASS', passId });
+              render();
+            } catch (err) {
+              console.error('Theme pipeline pass failed', err);
+              alert(`Theme pipeline pass failed: ${err instanceof Error ? err.message : String(err)}`);
+              render();
+            }
+          }
+
+          if (target.dataset.role === 'run-nkg-stage') {
+            try {
+              AppCore.dispatch({ type: 'NKG_STYLE_THEME_RUN_STAGE' });
+              render();
+            } catch (err) {
+              console.error('nkgStyleTheme stage failed', err);
+              alert(`nkgStyleTheme stage failed: ${err instanceof Error ? err.message : String(err)}`);
+              render();
+            }
           }
         });
       };
@@ -745,5 +1069,6 @@
     UI.bindEvents();
     UI.render();
   </script>
+
 </body>
 </html>

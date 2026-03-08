@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nkg.local/schemas/phase2.nkg-style-theme.schema.json",
+  "title": "NKG Phase 2 First Slice Output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "authorReference",
+    "styleSource",
+    "styleProfile",
+    "targetNovelMode",
+    "themeExploration"
+  ],
+  "properties": {
+    "authorReference": {
+      "type": "string",
+      "minLength": 1
+    },
+    "styleSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["authorName", "sampleParagraphs", "settingIntent"],
+      "properties": {
+        "authorName": { "type": "string", "minLength": 1 },
+        "sampleParagraphs": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "settingIntent": { "type": "string", "minLength": 1 }
+      }
+    },
+    "styleProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rhythm",
+        "sentenceLength",
+        "focalization",
+        "sensoryDensity",
+        "metaphorDensity",
+        "emotionalTemperature",
+        "actionVsReflection",
+        "narrativePressure",
+        "proseMode"
+      ],
+      "properties": {
+        "rhythm": { "type": "string", "minLength": 1 },
+        "sentenceLength": { "type": "string", "minLength": 1 },
+        "focalization": { "type": "string", "minLength": 1 },
+        "sensoryDensity": { "type": "string", "minLength": 1 },
+        "metaphorDensity": { "type": "string", "minLength": 1 },
+        "emotionalTemperature": { "type": "string", "minLength": 1 },
+        "actionVsReflection": { "type": "string", "minLength": 1 },
+        "narrativePressure": { "type": "string", "minLength": 1 },
+        "proseMode": { "type": "string", "minLength": 1 }
+      }
+    },
+    "targetNovelMode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "explanation"],
+      "properties": {
+        "label": { "type": "string", "minLength": 1 },
+        "explanation": { "type": "string", "minLength": 1 }
+      }
+    },
+    "themeExploration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["candidates", "selectedThemeTitle", "selectedThemeRationale"],
+      "properties": {
+        "candidates": {
+          "type": "array",
+          "minItems": 5,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["title", "rationale", "originalityScore", "compatibilityScore", "repetitionRisk"],
+            "properties": {
+              "title": { "type": "string", "minLength": 1 },
+              "rationale": { "type": "string", "minLength": 1 },
+              "originalityScore": { "type": "number" },
+              "compatibilityScore": { "type": "number" },
+              "repetitionRisk": { "type": "number", "minimum": 0 }
+            }
+          }
+        },
+        "selectedThemeTitle": { "type": "string", "minLength": 1 },
+        "selectedThemeRationale": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

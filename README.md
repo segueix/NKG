@@ -10,17 +10,14 @@ NKG currently supports only pre-generation foundation work. It does **not**:
 - export project packages.
 
 ## Current implementation status
-This repository currently implements **Phase 1 only**.
+This repository includes a stable Phase 1 foundation plus the **first official Phase 2 NKG style/theme slice**.
 
-### Phase 1 visible flow
-`idea → premise → structure → characters → world → chapterOutline`
+### Active flow
+`idea → premise → structure → characters → world → chapterOutline → nkgStyleTheme`
 
-### Phase 1 checkpoints
-- `cp_01_scope_clean`
-- `cp_02_ui_phase1_only`
-- `cp_03_appstate_ready`
-- `cp_04_stage_runner_ready`
-- `cp_05_phase1_shell_stable`
+### Checkpoints
+- Legacy Phase 1 visibility: `cp_01`..`cp_05`
+- Active first-slice Phase 2: `cp_11_nkg_input_ready`, `cp_12_style_profile_generated`, `cp_13_theme_candidates_generated`, `cp_14_central_theme_selected`, `cp_15_first_nkg_block_written`
 
 ## 3-phase plan (fixed)
 1. **Phase 1 (current):** pre-NKG functional foundation.
@@ -38,3 +35,7 @@ This repository currently implements **Phase 1 only**.
 - Stable repository rules live in `AGENTS.md`.
 - Reusable task prompts live in `docs/task-templates/`.
 - `docs/current-task.md` is the temporary per-task working prompt file and is expected to be overwritten between tasks.
+
+
+## First official Phase 2 slice
+The `nkgStyleTheme` stage executes a 3-pass pipeline (style analysis → theme ideation → theme selection/normalization) and writes the first official non-empty block to `AppState.outputs.nkg`.

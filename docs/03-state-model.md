@@ -1,4 +1,4 @@
-# 03 — State Model (Phase 1)
+# 03 — State Model (Phase 2 first official NKG slice)
 
 ## AppState top-level shape
 ```json
@@ -12,75 +12,108 @@
 ```
 
 ## `meta`
-Operational metadata for the running shell.
+Operational metadata:
 - `appName`
-- `phase`
+- `phase` (`phase2` for this slice)
 - `version`
 - `createdAt`
 - `updatedAt`
-- `currentStage` (`stageId|null`)
-- `lastSuccessfulStage` (`stageId|null`)
+- `currentStage`
+- `lastSuccessfulStage`
 
 ## `stages`
-Dictionary keyed by stage id:
+Includes Phase 1 stages plus one formal Phase 2 stage:
 - `idea`
 - `premise`
 - `structure`
 - `characters`
 - `world`
 - `chapterOutline`
+- `nkgStyleTheme`
 
-Each stage object tracks:
+Each stage uses the same structure:
 - `status` (`idle | running | ok | error`)
-- `startedAt` (`string|null`)
-- `finishedAt` (`string|null`)
-- `requestId` (`string|null`)
-- `errorCode` (`string|null`)
-- `errorMessage` (`string|null`)
-- `retries` (`number`)
+- `startedAt`
+- `finishedAt`
+- `requestId`
+- `errorCode`
+- `errorMessage`
+- `retries`
 
-## `project`
-Phase 1 narrative foundation payload.
-- `idea`
-- `premise`
-- `structure`
-- `characters`
-- `world`
-- `chapterOutline`
-- `themePipeline` (explicit 3-pass foundation helper)
-
-### `project.themePipeline`
-A structurally visible and diagnosable pre-NKG helper pipeline:
-
+## `project.themePipeline`
+First-slice pipeline input/work area:
+- `config.temperatures`
+  - `styleAnalysis` = `0.2`
+  - `themeIdeation` = `0.9`
+  - `themeSelection` = `0.35`
 - `authorReference`
-- `sampleParagraphs` (exactly 3 inputs)
+- `sampleParagraphs` (exactly 3)
 - `desiredSetting`
 - `selectedThemeIndex`
 - `pass1`
-  - `state` (`status`, `lastRunAt`, `requestId`, `errorCode`, `errorMessage`)
+  - `state`
   - `styleProfile`
   - `targetNovelMode`
 - `pass2`
   - `state`
-  - `candidateThemes` (at least 5 candidates on success)
+  - `candidateThemes`
 - `pass3`
   - `state`
   - `selectedThemeTitle`
   - `selectedThemeRationale`
-  - `finalNkgWrite` (Phase 1 placeholder write-up, not full NKG generation)
 
-Pass dependencies are enforced in order:
-1. Pass 1 — style analysis
-2. Pass 2 — theme ideation
-3. Pass 3 — theme selection and normalization
+## `outputs.nkg` (official write target)
+On successful pass 3, the first official non-empty NKG block is written to `AppState.outputs.nkg` with this structure:
 
-## `outputs`
-Placeholders only in Phase 1:
-- `nkg` (placeholder)
-- `bible` (placeholder)
+```json
+{
+  "authorReference": "string",
+  "styleSource": {
+    "authorName": "string",
+    "sampleParagraphs": ["string", "string", "string"],
+    "settingIntent": "string"
+  },
+  "styleProfile": {
+    "rhythm": "string",
+    "sentenceLength": "string",
+    "focalization": "string",
+    "sensoryDensity": "string",
+    "metaphorDensity": "string",
+    "emotionalTemperature": "string",
+    "actionVsReflection": "string",
+    "narrativePressure": "string",
+    "proseMode": "string"
+  },
+  "targetNovelMode": {
+    "label": "string",
+    "explanation": "string"
+  },
+  "themeExploration": {
+    "candidates": [
+      {
+        "title": "string",
+        "rationale": "string",
+        "originalityScore": 0,
+        "compatibilityScore": 0,
+        "repetitionRisk": 0
+      }
+    ],
+    "selectedThemeTitle": "string",
+    "selectedThemeRationale": "string"
+  }
+}
+```
 
 ## `diagnostics`
-Checkpoint and trace information.
-- `checkpoints`: status map for cp_01..cp_05
-- `trace`: recent events
-- `lastError`: latest error snapshot if any
+Contains checkpoint, trace, and pass-level visibility:
+- `checkpoints` (`cp_01..cp_05` + `cp_11..cp_15`)
+- `trace`
+- `lastError`
+- `nkgStyleTheme`
+  - `currentPhase`
+  - `currentStage`
+  - `lastSuccessfulStage`
+  - `pass1`, `pass2`, `pass3` status snapshots
+  - `requestIds`
+  - `warnings`
+  - `lastError`

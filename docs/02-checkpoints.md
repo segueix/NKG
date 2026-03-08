@@ -1,36 +1,43 @@
 # 02 — Checkpoints
 
-## Phase 1 checkpoints (active)
+## Phase 1 checkpoints (legacy visibility)
+These remain visible for regression tracking from the original shell:
+- `cp_01_scope_clean`
+- `cp_02_ui_phase1_only`
+- `cp_03_appstate_ready`
+- `cp_04_stage_runner_ready`
+- `cp_05_phase1_shell_stable`
 
-### cp_01_scope_clean
-True only when the runtime remains in strict Phase 1 boundary:
-- `meta.phase === "phase1"`
-- Exactly the six Phase 1 stage IDs are active
-- Outputs remain placeholders (`outputs.nkg === null` and `outputs.bible === null`)
-- Trace messages do not indicate manuscript/prose-writing behavior
+## Phase 2 first-slice checkpoints (active)
 
-### cp_02_ui_phase1_only
-True only when rendered UI stage cards exactly match these IDs in order:
-- `idea, premise, structure, characters, world, chapterOutline`
+### cp_11_nkg_input_ready
+True only when all required first-slice inputs are non-empty:
+- one reference author name
+- exactly 3 non-empty sample paragraphs
+- one non-empty desired setting/location
 
-### cp_03_appstate_ready
-True only when centralized AppState is coherent:
-- Top-level keys are exactly: `meta`, `stages`, `project`, `outputs`, `diagnostics`
-- `meta` includes `currentStage` and `lastSuccessfulStage`
-- Every stage entry includes all required lifecycle/error fields and allowed status values
+### cp_12_style_profile_generated
+True only when Pass 1 succeeds and generates:
+- complete `styleProfile` with all required fields
+- non-empty `targetNovelMode.label`
+- non-empty `targetNovelMode.explanation`
 
-### cp_04_stage_runner_ready
-True only when stage runner wiring is present and consistent:
-- Stage registry is valid and matches the active six Phase 1 stage IDs
-- Stage runner functions exist (`run`, `complete`, `fail`, `reset` paths)
-- Runtime stage states obey status/retries shape requirements
+### cp_13_theme_candidates_generated
+True only when Pass 2 succeeds and generates:
+- at least 5 candidate themes
+- scored candidates with `originalityScore`, `compatibilityScore`, and `repetitionRisk`
 
-### cp_05_phase1_shell_stable
-True only when:
-- cp_01 through cp_04 are true,
-- diagnostics structures are present (checkpoint map + trace array), and
-- Phase 1 UI snapshot is available for checkpoint evaluation.
+### cp_14_central_theme_selected
+True only when Pass 3 succeeds and sets:
+- non-empty `selectedThemeTitle`
+- non-empty `selectedThemeRationale`
 
-## Later phases (not implemented yet)
-- Phase 2: NKG generation
-- Phase 3: Narrative Bible + export
+### cp_15_first_nkg_block_written
+True only when the official first NKG block is written to `AppState.outputs.nkg` and passes output validation.
+
+## Failure visibility requirements
+Failures must identify where they occurred:
+- style analysis pass
+- theme ideation pass
+- theme selection/normalization pass
+- final official NKG write
