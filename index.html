@@ -86,6 +86,42 @@
       }
     };
 
+    const THEME_PIPELINE_PRESETS = [
+      {
+        id: 'cli-fi-repair-crews',
+        label: 'CLI-FI Repair Crews',
+        authorReference: 'Octavia E. Butler',
+        desiredSetting: 'Sinking Mediterranean arcology where civic engineers barter for oxygen credits',
+        sampleParagraphs: [
+          'At dawn the desal pumps coughed awake, and every family listened for the same stutter that meant another filter had cracked in the night.',
+          'Mara wrapped her hands in copper mesh before touching the core, because skin oils meant corrosion and corrosion meant ration cuts by evening.',
+          'No one called it heroism anymore; they called it maintenance, a prayer repeated with tools because prayer without tools drowned with the old districts.'
+        ]
+      },
+      {
+        id: 'gothic-memory-court',
+        label: 'Gothic Memory Court',
+        authorReference: 'Shirley Jackson',
+        desiredSetting: 'Rain-soaked provincial courthouse where witness memories are treated as physical evidence',
+        sampleParagraphs: [
+          'The benches were polished by generations of anxious hands, and each carved initial seemed to lean toward the witness stand as if waiting to testify.',
+          'When the clerk unsealed the lacquer box, the room cooled, and everyone pretended not to notice the smell of camphor and old apologies.',
+          'Etta spoke in short clauses, as though every sentence required judicial approval before it could survive in public air.'
+        ]
+      },
+      {
+        id: 'mythic-frontier-caravan',
+        label: 'Mythic Frontier Caravan',
+        authorReference: 'N. K. Jemisin',
+        desiredSetting: 'Volcanic trade route where caravans negotiate with sentient storms',
+        sampleParagraphs: [
+          'The ash horizon moved like a living wall, and the elders read its folds the way priests once read scripture.',
+          'Jori tightened the bronze bells on each cartwheel, because storms respected formal greetings and punished improvisation.',
+          'Behind the caravan, the cooled glass plain kept perfect footprints for only an hour before heat reclaimed every promise.'
+        ]
+      }
+    ];
+
     const REQUIRED_STYLE_PROFILE_FIELDS = [
       'rhythm',
       'sentenceLength',
@@ -144,6 +180,9 @@
         pass3: createPassState(),
         requestIds: [],
         warnings: [],
+        runHistory: [],
+        lastRunReport: null,
+        lastRunInputHash: null,
         lastError: null
       });
 
@@ -166,6 +205,7 @@
             sampleParagraphs: ['', '', ''],
             desiredSetting: '',
             selectedThemeIndex: 0,
+            selectedPresetId: '',
             pass1: {
               state: createPassState(),
               styleProfile: null,
@@ -246,6 +286,84 @@
         state.diagnostics.nkgStyleTheme.requestIds = state.diagnostics.nkgStyleTheme.requestIds.slice(0, 20);
       };
 
+      const stableStringify = (value) => {
+        if (value === null || typeof value !== 'object') return JSON.stringify(value);
+        if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
+        const keys = Object.keys(value).sort();
+        return `{${keys.map(k => `${JSON.stringify(k)}:${stableStringify(value[k])}`).join(',')}}`;
+      };
+
+      const hashString = (text) => {
+        let hash = 2166136261;
+        for (let i = 0; i < text.length; i += 1) {
+          hash ^= text.charCodeAt(i);
+          hash = Math.imul(hash, 16777619);
+        }
+        return `fnv1a_${(hash >>> 0).toString(16).padStart(8, '0')}`;
+      };
+
+      const computePipelineInputHash = () => {
+        const payload = {
+          authorReference: state.project.themePipeline.authorReference.trim(),
+          sampleParagraphs: state.project.themePipeline.sampleParagraphs.map(v => v.trim()),
+          desiredSetting: state.project.themePipeline.desiredSetting.trim(),
+          selectedThemeIndex: state.project.themePipeline.selectedThemeIndex
+        };
+        return hashString(stableStringify(payload));
+      };
+
+      const recordRunHistory = ({ status, startedAt, finishedAt, selectedThemeTitle = '', error = null }) => {
+        const durationMs = Math.max(0, new Date(finishedAt).getTime() - new Date(startedAt).getTime());
+        const row = {
+          at: finishedAt,
+          status,
+          durationMs,
+          selectedThemeTitle,
+          warningCount: state.diagnostics.nkgStyleTheme.warnings.length,
+          inputHash: computePipelineInputHash(),
+          error
+        };
+        state.diagnostics.nkgStyleTheme.runHistory.unshift(row);
+        state.diagnostics.nkgStyleTheme.runHistory = state.diagnostics.nkgStyleTheme.runHistory.slice(0, 15);
+      };
+
+      const buildRunReport = () => {
+        const pipeline = state.project.themePipeline;
+        const candidates = pipeline.pass2.candidateThemes;
+        const best = candidates[0] || null;
+        const selected = candidates[pipeline.selectedThemeIndex] || candidates[0] || null;
+        const avgOriginality = candidates.length ? Number((candidates.reduce((sum, c) => sum + c.originalityScore, 0) / candidates.length).toFixed(2)) : null;
+        const avgCompatibility = candidates.length ? Number((candidates.reduce((sum, c) => sum + c.compatibilityScore, 0) / candidates.length).toFixed(2)) : null;
+        const avgRepetitionRisk = candidates.length ? Number((candidates.reduce((sum, c) => sum + c.repetitionRisk, 0) / candidates.length).toFixed(2)) : null;
+
+        return {
+          generatedAt: nowIso(),
+          inputHash: computePipelineInputHash(),
+          passStatuses: {
+            pass1: pipeline.pass1.state.status,
+            pass2: pipeline.pass2.state.status,
+            pass3: pipeline.pass3.state.status
+          },
+          candidateStats: {
+            count: candidates.length,
+            avgOriginality,
+            avgCompatibility,
+            avgRepetitionRisk,
+            bestTotalScore: best ? best.totalScore : null
+          },
+          selectedTheme: selected ? {
+            index: pipeline.selectedThemeIndex,
+            title: selected.title,
+            rationale: selected.rationale,
+            originalityScore: selected.originalityScore,
+            compatibilityScore: selected.compatibilityScore,
+            repetitionRisk: selected.repetitionRisk
+          } : null,
+          warningCount: state.diagnostics.nkgStyleTheme.warnings.length,
+          latestWarnings: state.diagnostics.nkgStyleTheme.warnings.slice(0, 3)
+        };
+      };
+
       const resetPipelineOutputs = () => {
         const pipeline = state.project.themePipeline;
         pipeline.pass1.styleProfile = null;
@@ -274,6 +392,8 @@
             throw new Error('Invalid paragraph index. Expected 0, 1, or 2.');
           }
           pipeline.sampleParagraphs[paragraphIndex] = String(value ?? '');
+        } else if (field === 'selectedPresetId') {
+          pipeline.selectedPresetId = String(value ?? '');
         } else if (field === 'selectedThemeIndex') {
           const nextIndex = Number(value);
           if (!Number.isInteger(nextIndex) || nextIndex < 0) throw new Error('selectedThemeIndex must be a non-negative integer.');
@@ -283,6 +403,24 @@
         }
         setMetaUpdatedAt();
         writeTrace('pipeline.input.update', 'Theme pipeline input updated', { field, paragraphIndex });
+      };
+
+      const applyThemePipelinePreset = (presetId) => {
+        const preset = THEME_PIPELINE_PRESETS.find(entry => entry.id === presetId);
+        if (!preset) throw new Error(`Unknown preset: ${presetId}`);
+        state.project.themePipeline.authorReference = preset.authorReference;
+        state.project.themePipeline.desiredSetting = preset.desiredSetting;
+        state.project.themePipeline.sampleParagraphs = [...preset.sampleParagraphs];
+        state.project.themePipeline.selectedThemeIndex = 0;
+        state.project.themePipeline.selectedPresetId = preset.id;
+        state.project.themePipeline.pass1.state = createPassState();
+        state.project.themePipeline.pass2.state = createPassState();
+        state.project.themePipeline.pass3.state = createPassState();
+        resetPipelineOutputs();
+        state.diagnostics.nkgStyleTheme.lastRunReport = null;
+        state.diagnostics.nkgStyleTheme.lastRunInputHash = null;
+        writeTrace('pipeline.preset.apply', 'Theme pipeline preset applied', { presetId: preset.id });
+        setMetaUpdatedAt();
       };
 
       const inputValidationErrors = () => {
@@ -671,6 +809,7 @@
       };
 
       const runNkgStyleThemeStage = () => {
+        const startedAt = nowIso();
         runStage('nkgStyleTheme');
         state.diagnostics.nkgStyleTheme.warnings = [];
         resetPipelineOutputs();
@@ -681,9 +820,24 @@
           if (state.outputs.nkg === null) {
             throw new Error('Final NKG block is null after pass 3.');
           }
+          state.diagnostics.nkgStyleTheme.lastRunInputHash = computePipelineInputHash();
+          state.diagnostics.nkgStyleTheme.lastRunReport = buildRunReport();
           completeStage('nkgStyleTheme');
+          recordRunHistory({
+            status: 'ok',
+            startedAt,
+            finishedAt: nowIso(),
+            selectedThemeTitle: state.project.themePipeline.pass3.selectedThemeTitle
+          });
         } catch (err) {
           failStage('nkgStyleTheme', 'NKG_STYLE_THEME_STAGE_ERROR', err instanceof Error ? err.message : String(err));
+          state.diagnostics.nkgStyleTheme.lastRunReport = null;
+          recordRunHistory({
+            status: 'error',
+            startedAt,
+            finishedAt: nowIso(),
+            error: err instanceof Error ? err.message : String(err)
+          });
           throw err;
         } finally {
           setMetaUpdatedAt();
@@ -822,6 +976,9 @@
             case 'THEME_PIPELINE_RUN_PASS':
               runThemePipelinePass(action.passId);
               break;
+            case 'THEME_PIPELINE_APPLY_PRESET':
+              applyThemePipelinePreset(action.presetId);
+              break;
             case 'NKG_STYLE_THEME_RUN_STAGE':
               runNkgStyleThemeStage();
               break;
@@ -913,6 +1070,7 @@
           `<div><strong>Pass 2 status:</strong> ${nkgDiagnostics.pass2.status} | requestId: ${nkgDiagnostics.pass2.requestId || '-'} </div>`,
           `<div><strong>Pass 3 status:</strong> ${nkgDiagnostics.pass3.status} | requestId: ${nkgDiagnostics.pass3.requestId || '-'} </div>`,
           `<div><strong>Warnings:</strong> ${nkgDiagnostics.warnings.length}</div>`,
+          `<div><strong>Recent runs:</strong> ${nkgDiagnostics.runHistory.length}</div>`,
           `<div><strong>Last error:</strong> ${state.diagnostics.lastError ? escapeHtml(`${state.diagnostics.lastError.stageId} (${state.diagnostics.lastError.errorCode}) ${state.diagnostics.lastError.errorMessage}`) : '-'}</div>`
         ].join('');
 
@@ -927,6 +1085,14 @@
         nodes.themePipelineRoot.innerHTML = `
           <div class="actions" style="margin-bottom:.5rem;">
             <button data-role="run-nkg-stage">Run official nkgStyleTheme stage (Pass 1 → 2 → 3)</button>
+          </div>
+          <div class="field">
+            <label for="selectedPresetId">Quick presets (optional bootstrap)</label>
+            <select id="selectedPresetId" data-role="theme-input" data-field="selectedPresetId">
+              <option value="">-- Select preset --</option>
+              ${THEME_PIPELINE_PRESETS.map(preset => `<option value="${preset.id}" ${pipeline.selectedPresetId === preset.id ? 'selected' : ''}>${escapeHtml(preset.label)}</option>`).join('')}
+            </select>
+            <div class="actions"><button data-role="apply-theme-preset">Apply selected preset</button></div>
           </div>
           <div class="field">
             <label for="authorReference">Author reference</label>
@@ -955,6 +1121,12 @@
           <button data-role="run-theme-pass" data-pass-id="pass2">Run Pass 2</button>
           <div class="muted">status: ${pipeline.pass2.state.status} | lastRunAt: ${pipeline.pass2.state.lastRunAt || '-'} | requestId: ${pipeline.pass2.state.requestId || '-'} | temperature: ${pipeline.pass2.state.temperature ?? '-'}</div>
           <pre>${escapeHtml(JSON.stringify({ candidateThemes: pipeline.pass2.candidateThemes, error: pipeline.pass2.state.errorMessage }, null, 2))}</pre>
+
+          <h3>Last run report</h3>
+          <pre>${escapeHtml(JSON.stringify(state.diagnostics.nkgStyleTheme.lastRunReport, null, 2))}</pre>
+
+          <h3>Recent run history</h3>
+          <pre>${escapeHtml(JSON.stringify(state.diagnostics.nkgStyleTheme.runHistory, null, 2))}</pre>
 
           <h3>Pass 3 — Theme selection and normalization</h3>
           <div class="field">
@@ -1037,6 +1209,19 @@
         nodes.themePipelineRoot.addEventListener('click', (event) => {
           const target = event.target;
           if (!(target instanceof HTMLElement)) return;
+          if (target.dataset.role === 'apply-theme-preset') {
+            const selector = nodes.themePipelineRoot.querySelector('#selectedPresetId');
+            const presetId = selector instanceof HTMLSelectElement ? selector.value : '';
+            if (!presetId) return;
+            try {
+              AppCore.dispatch({ type: 'THEME_PIPELINE_APPLY_PRESET', presetId });
+              render();
+            } catch (err) {
+              console.error('Theme pipeline preset apply failed', err);
+              alert(`Theme pipeline preset apply failed: ${err instanceof Error ? err.message : String(err)}`);
+            }
+          }
+
           if (target.dataset.role === 'run-theme-pass') {
             const passId = target.dataset.passId;
             if (!passId) return;
